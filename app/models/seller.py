@@ -17,8 +17,13 @@ class InventoryPolicy(BaseModel):
     unit_cost: float
 
 
+class OrderSpikePolicy(BaseModel):
+    auto_approve_max_multiplier: float  # spike above this ratio → HIGH risk
+
+
 class SellerPolicies(BaseModel):
     inventory_low: InventoryPolicy
+    order_spike: OrderSpikePolicy
 
 
 class Seller(BaseModel):

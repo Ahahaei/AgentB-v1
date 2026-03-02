@@ -6,12 +6,12 @@ from app.models.seller import Seller
 def evaluate(intent: Intent, seller: Seller, payload: dict) -> PolicyResult:
     if intent == Intent.REORDER:
         return _evaluate_reorder(seller, payload)
+    if intent == Intent.FLAG_ORDER_SPIKE:
+        return _evaluate_order_spike(seller, payload)
     return PolicyResult(
         action="none",
         risk_level=RiskLevel.HIGH,
         reasoning=f"Unknown intent '{intent}' — escalating for human review.",
-        recommended_quantity=0,
-        estimated_spend=0.0,
     )
 
 
@@ -53,4 +53,34 @@ def _evaluate_reorder(seller: Seller, payload: dict) -> PolicyResult:
         reasoning=reasoning,
         recommended_quantity=qty,
         estimated_spend=spend,
+    )
+
+
+def _evaluate_order_spike(seller: Seller, payload: dict) -> PolicyResult:
+    pol = seller.policies.order_spike
+    order_count = payload.get("order_count", 0)
+    baseline_count = payload.get("baseline_count", 1)
+    window_minutes = payload.get("window_minutes", 60)
+
+    multiplier = order_count / baseline_count if baseline_count > 0 else float("inf")
+
+    if multiplier <= pol.auto_approve_max_multiplier:
+        risk = RiskLevel.LOW
+        reasoning = (
+            f"Order spike of {multiplier:.1f}x baseline ({order_count} orders vs "
+            f"{baseline_count} expected in {window_minutes}min) is within "
+            f"auto-approve threshold ({pol.auto_approve_max_multiplier}x)."
+        )
+    else:
+        risk = RiskLevel.HIGH
+        reasoning = (
+            f"Order spike of {multiplier:.1f}x baseline ({order_count} orders vs "
+            f"{baseline_count} expected in {window_minutes}min) exceeds "
+            f"auto-approve threshold ({pol.auto_approve_max_multiplier}x) — requires review."
+        )
+
+    return PolicyResult(
+        action="flag_order_spike",
+        risk_level=risk,
+        reasoning=reasoning,
     )

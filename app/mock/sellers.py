@@ -1,4 +1,10 @@
-from app.models.seller import InventoryPolicy, Seller, SellerPolicies, SellerStatus
+from app.models.seller import (
+    InventoryPolicy,
+    OrderSpikePolicy,
+    Seller,
+    SellerPolicies,
+    SellerStatus,
+)
 
 MOCK_SELLERS: list[Seller] = [
     Seller(
@@ -12,7 +18,9 @@ MOCK_SELLERS: list[Seller] = [
                 auto_approve_max_units=50,
                 auto_approve_max_spend=500.0,
                 unit_cost=8.00,
-            )
+            ),
+            # spike up to 2x baseline → LOW; above 2x → HIGH
+            order_spike=OrderSpikePolicy(auto_approve_max_multiplier=2.0),
         ),
     ),
     # reorder 40 * $8.00 = $320 < $500, 40 < 50 → LOW risk by default
@@ -27,7 +35,9 @@ MOCK_SELLERS: list[Seller] = [
                 auto_approve_max_units=100,
                 auto_approve_max_spend=800.0,
                 unit_cost=5.00,
-            )
+            ),
+            # tighter threshold — spike above 1.5x baseline → HIGH
+            order_spike=OrderSpikePolicy(auto_approve_max_multiplier=1.5),
         ),
     ),
     # reorder 200 * $5.00 = $1000 > $800, 200 > 100 → HIGH risk by default
@@ -42,7 +52,8 @@ MOCK_SELLERS: list[Seller] = [
                 auto_approve_max_units=50,
                 auto_approve_max_spend=500.0,
                 unit_cost=10.00,
-            )
+            ),
+            order_spike=OrderSpikePolicy(auto_approve_max_multiplier=2.0),
         ),
     ),
 ]

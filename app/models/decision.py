@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -15,8 +16,8 @@ class PolicyResult(BaseModel):
     action: str
     risk_level: RiskLevel
     reasoning: str
-    recommended_quantity: int
-    estimated_spend: float
+    recommended_quantity: Optional[int] = None
+    estimated_spend: Optional[float] = None
 
 
 class ExecutionStatus(str, Enum):

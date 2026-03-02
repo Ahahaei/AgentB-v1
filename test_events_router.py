@@ -73,3 +73,57 @@ def test_get_nonexistent_event_returns_404():
     with TestClient(app) as client:
         resp = client.get("/events/does-not-exist")
     assert resp.status_code == 404
+
+
+# --- order_spike_detected ---
+
+SPIKE_EVENT_LOW = {
+    "seller_id": "S001",
+    "event_type": "order_spike_detected",
+    # 20/12 = 1.67x — below S001 threshold (2.0) → LOW
+    "payload": {"order_count": 20, "baseline_count": 12, "window_minutes": 60},
+}
+
+SPIKE_EVENT_HIGH = {
+    "seller_id": "S001",
+    "event_type": "order_spike_detected",
+    # 30/12 = 2.5x — above S001 threshold (2.0) → HIGH
+    "payload": {"order_count": 30, "baseline_count": 12, "window_minutes": 60},
+}
+
+
+def test_order_spike_low_risk_is_auto_executed():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=SPIKE_EVENT_LOW)
+        event_id = post_resp.json()["event_id"]
+        get_resp = client.get(f"/events/{event_id}")
+
+    data = get_resp.json()
+    assert data["status"] == "completed"
+    assert data["result"]["intent"] == "flag_order_spike"
+    assert data["result"]["policy_result"]["risk_level"] == "LOW"
+    assert data["result"]["execution_result"]["status"] == "executed"
+
+
+def test_order_spike_high_risk_is_escalated():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=SPIKE_EVENT_HIGH)
+        event_id = post_resp.json()["event_id"]
+        get_resp = client.get(f"/events/{event_id}")
+
+    data = get_resp.json()
+    assert data["status"] == "completed"
+    assert data["result"]["intent"] == "flag_order_spike"
+    assert data["result"]["policy_result"]["risk_level"] == "HIGH"
+    assert data["result"]["execution_result"]["status"] == "escalated"
+
+
+def test_order_spike_result_has_no_quantity_or_spend():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=SPIKE_EVENT_LOW)
+        event_id = post_resp.json()["event_id"]
+        get_resp = client.get(f"/events/{event_id}")
+
+    policy = get_resp.json()["result"]["policy_result"]
+    assert policy["recommended_quantity"] is None
+    assert policy["estimated_spend"] is None

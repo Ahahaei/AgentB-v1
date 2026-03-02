@@ -9,6 +9,7 @@ from app.models.decision import DecisionResult
 
 class EventType(str, Enum):
     INVENTORY_LOW = "inventory_low"
+    ORDER_SPIKE_DETECTED = "order_spike_detected"
 
 
 class EventStatus(str, Enum):

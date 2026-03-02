@@ -5,11 +5,7 @@ def execute(policy_result: PolicyResult) -> ExecutionResult:
     if policy_result.risk_level == RiskLevel.LOW:
         return ExecutionResult(
             status=ExecutionStatus.EXECUTED,
-            message=(
-                f"[MOCK] Auto-executed: {policy_result.action} "
-                f"({policy_result.recommended_quantity} units, "
-                f"est. ${policy_result.estimated_spend:.2f})"
-            ),
+            message=f"[MOCK] Auto-executed: {policy_result.action} — {policy_result.reasoning}",
         )
     return ExecutionResult(
         status=ExecutionStatus.ESCALATED,

@@ -40,3 +40,41 @@ def test_sku_appears_in_reasoning():
 def test_high_risk_reasoning_names_violations():
     result = evaluate(Intent.REORDER, SELLER_HIGH, PAYLOAD)
     assert "exceeds" in result.reasoning
+
+
+# --- order_spike_detected ---
+# S001: auto_approve_max_multiplier=2.0
+# S002: auto_approve_max_multiplier=1.5
+
+SPIKE_PAYLOAD_LOW = {"order_count": 20, "baseline_count": 12, "window_minutes": 60}
+# multiplier = 20/12 = 1.67x — below S001 threshold (2.0) → LOW, above S002 threshold (1.5) → HIGH
+
+SPIKE_PAYLOAD_HIGH = {"order_count": 30, "baseline_count": 12, "window_minutes": 60}
+# multiplier = 30/12 = 2.5x — above both thresholds → HIGH for both sellers
+
+
+def test_order_spike_within_threshold_is_low_risk():
+    result = evaluate(Intent.FLAG_ORDER_SPIKE, SELLER_LOW, SPIKE_PAYLOAD_LOW)
+    assert result.risk_level == RiskLevel.LOW
+
+
+def test_order_spike_exceeds_threshold_is_high_risk():
+    result = evaluate(Intent.FLAG_ORDER_SPIKE, SELLER_LOW, SPIKE_PAYLOAD_HIGH)
+    assert result.risk_level == RiskLevel.HIGH
+
+
+def test_order_spike_tighter_threshold_escalates_earlier():
+    # S002 has max_multiplier=1.5, same payload (1.67x) → HIGH
+    result = evaluate(Intent.FLAG_ORDER_SPIKE, SELLER_HIGH, SPIKE_PAYLOAD_LOW)
+    assert result.risk_level == RiskLevel.HIGH
+
+
+def test_order_spike_reasoning_includes_multiplier():
+    result = evaluate(Intent.FLAG_ORDER_SPIKE, SELLER_LOW, SPIKE_PAYLOAD_LOW)
+    assert "1.7x" in result.reasoning
+
+
+def test_order_spike_has_no_quantity_or_spend():
+    result = evaluate(Intent.FLAG_ORDER_SPIKE, SELLER_LOW, SPIKE_PAYLOAD_LOW)
+    assert result.recommended_quantity is None
+    assert result.estimated_spend is None
