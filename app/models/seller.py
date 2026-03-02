@@ -21,9 +21,14 @@ class OrderSpikePolicy(BaseModel):
     auto_approve_max_multiplier: float  # spike above this ratio → HIGH risk
 
 
+class RefundRatePolicy(BaseModel):
+    auto_approve_max_rate: float  # refund rate above this fraction → HIGH risk (e.g. 0.10 = 10%)
+
+
 class SellerPolicies(BaseModel):
     inventory_low: InventoryPolicy
     order_spike: OrderSpikePolicy
+    high_refund_rate: RefundRatePolicy
 
 
 class Seller(BaseModel):

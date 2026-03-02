@@ -78,3 +78,44 @@ def test_order_spike_has_no_quantity_or_spend():
     result = evaluate(Intent.FLAG_ORDER_SPIKE, SELLER_LOW, SPIKE_PAYLOAD_LOW)
     assert result.recommended_quantity is None
     assert result.estimated_spend is None
+
+
+# --- high_refund_rate_detected ---
+# S001: auto_approve_max_rate=0.10 (10%)
+# S002: auto_approve_max_rate=0.05 (5%)
+
+REFUND_PAYLOAD_LOW = {"refund_count": 5, "order_count": 100, "window_minutes": 1440}
+# rate = 5% — below S001 threshold (10%) → LOW, below S002 threshold (5%) = equal → LOW (strict >)
+
+REFUND_PAYLOAD_HIGH = {"refund_count": 15, "order_count": 100, "window_minutes": 1440}
+# rate = 15% — above both thresholds → HIGH
+
+REFUND_PAYLOAD_S002_HIGH = {"refund_count": 6, "order_count": 100, "window_minutes": 1440}
+# rate = 6% — above S002 threshold (5%) → HIGH, below S001 (10%) → LOW
+
+
+def test_refund_rate_within_threshold_is_low_risk():
+    result = evaluate(Intent.FLAG_REFUND_RATE, SELLER_LOW, REFUND_PAYLOAD_LOW)
+    assert result.risk_level == RiskLevel.LOW
+
+
+def test_refund_rate_exceeds_threshold_is_high_risk():
+    result = evaluate(Intent.FLAG_REFUND_RATE, SELLER_LOW, REFUND_PAYLOAD_HIGH)
+    assert result.risk_level == RiskLevel.HIGH
+
+
+def test_refund_rate_tighter_threshold_escalates_earlier():
+    # S002 threshold is 5%; 6% rate → HIGH for S002, LOW for S001
+    assert evaluate(Intent.FLAG_REFUND_RATE, SELLER_HIGH, REFUND_PAYLOAD_S002_HIGH).risk_level == RiskLevel.HIGH
+    assert evaluate(Intent.FLAG_REFUND_RATE, SELLER_LOW, REFUND_PAYLOAD_S002_HIGH).risk_level == RiskLevel.LOW
+
+
+def test_refund_rate_reasoning_includes_percentage():
+    result = evaluate(Intent.FLAG_REFUND_RATE, SELLER_LOW, REFUND_PAYLOAD_LOW)
+    assert "5.0%" in result.reasoning
+
+
+def test_refund_rate_has_no_quantity_or_spend():
+    result = evaluate(Intent.FLAG_REFUND_RATE, SELLER_LOW, REFUND_PAYLOAD_LOW)
+    assert result.recommended_quantity is None
+    assert result.estimated_spend is None

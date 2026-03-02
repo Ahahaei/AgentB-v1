@@ -127,3 +127,46 @@ def test_order_spike_result_has_no_quantity_or_spend():
     policy = get_resp.json()["result"]["policy_result"]
     assert policy["recommended_quantity"] is None
     assert policy["estimated_spend"] is None
+
+
+# --- high_refund_rate_detected ---
+
+REFUND_EVENT_LOW = {
+    "seller_id": "S001",
+    "event_type": "high_refund_rate_detected",
+    # 5/100 = 5% — below S001 threshold (10%) → LOW
+    "payload": {"refund_count": 5, "order_count": 100, "window_minutes": 1440},
+}
+
+REFUND_EVENT_HIGH = {
+    "seller_id": "S001",
+    "event_type": "high_refund_rate_detected",
+    # 15/100 = 15% — above S001 threshold (10%) → HIGH
+    "payload": {"refund_count": 15, "order_count": 100, "window_minutes": 1440},
+}
+
+
+def test_refund_rate_low_risk_is_auto_executed():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=REFUND_EVENT_LOW)
+        event_id = post_resp.json()["event_id"]
+        get_resp = client.get(f"/events/{event_id}")
+
+    data = get_resp.json()
+    assert data["status"] == "completed"
+    assert data["result"]["intent"] == "flag_refund_rate"
+    assert data["result"]["policy_result"]["risk_level"] == "LOW"
+    assert data["result"]["execution_result"]["status"] == "executed"
+
+
+def test_refund_rate_high_risk_is_escalated():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=REFUND_EVENT_HIGH)
+        event_id = post_resp.json()["event_id"]
+        get_resp = client.get(f"/events/{event_id}")
+
+    data = get_resp.json()
+    assert data["status"] == "completed"
+    assert data["result"]["intent"] == "flag_refund_rate"
+    assert data["result"]["policy_result"]["risk_level"] == "HIGH"
+    assert data["result"]["execution_result"]["status"] == "escalated"

@@ -8,6 +8,8 @@ def evaluate(intent: Intent, seller: Seller, payload: dict) -> PolicyResult:
         return _evaluate_reorder(seller, payload)
     if intent == Intent.FLAG_ORDER_SPIKE:
         return _evaluate_order_spike(seller, payload)
+    if intent == Intent.FLAG_REFUND_RATE:
+        return _evaluate_refund_rate(seller, payload)
     return PolicyResult(
         action="none",
         risk_level=RiskLevel.HIGH,
@@ -81,6 +83,37 @@ def _evaluate_order_spike(seller: Seller, payload: dict) -> PolicyResult:
 
     return PolicyResult(
         action="flag_order_spike",
+        risk_level=risk,
+        reasoning=reasoning,
+    )
+
+
+def _evaluate_refund_rate(seller: Seller, payload: dict) -> PolicyResult:
+    pol = seller.policies.high_refund_rate
+    refund_count = payload.get("refund_count", 0)
+    order_count = payload.get("order_count", 1)
+    window_minutes = payload.get("window_minutes", 1440)
+
+    rate = refund_count / order_count if order_count > 0 else 1.0
+    rate_pct = rate * 100
+
+    if rate <= pol.auto_approve_max_rate:
+        risk = RiskLevel.LOW
+        reasoning = (
+            f"Refund rate of {rate_pct:.1f}% ({refund_count}/{order_count} orders "
+            f"in {window_minutes}min) is within auto-approve threshold "
+            f"({pol.auto_approve_max_rate * 100:.0f}%)."
+        )
+    else:
+        risk = RiskLevel.HIGH
+        reasoning = (
+            f"Refund rate of {rate_pct:.1f}% ({refund_count}/{order_count} orders "
+            f"in {window_minutes}min) exceeds auto-approve threshold "
+            f"({pol.auto_approve_max_rate * 100:.0f}%) — requires review."
+        )
+
+    return PolicyResult(
+        action="flag_refund_rate",
         risk_level=risk,
         reasoning=reasoning,
     )
