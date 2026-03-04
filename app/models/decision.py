@@ -28,6 +28,7 @@ class ExecutionStatus(str, Enum):
 class ExecutionResult(BaseModel):
     status: ExecutionStatus
     message: str
+    approval_id: Optional[str] = None
 
 
 class DecisionResult(BaseModel):

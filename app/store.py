@@ -2,12 +2,14 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.mock.sellers import MOCK_SELLERS
+from app.models.approval import ApprovalStatus, PendingApproval
 from app.models.decision import DecisionResult
 from app.models.event import EventRecord, EventStatus
 from app.models.seller import Seller
 
 _sellers: dict[str, Seller] = {s.id: s for s in MOCK_SELLERS}
 _events: dict[str, EventRecord] = {}
+_approvals: dict[str, PendingApproval] = {}
 
 
 # --- Seller ---
@@ -49,4 +51,23 @@ def set_event_failed(event_id: str, error: str) -> None:
         "status": EventStatus.FAILED,
         "error": error,
         "updated_at": datetime.now(timezone.utc),
+    })
+
+
+# --- Approvals ---
+
+def create_approval(record: PendingApproval) -> None:
+    _approvals[record.id] = record
+
+
+def get_approval(approval_id: str) -> Optional[PendingApproval]:
+    return _approvals.get(approval_id)
+
+
+def resolve_approval(approval_id: str, status: ApprovalStatus, resolved_by: str) -> None:
+    record = _approvals[approval_id]
+    _approvals[approval_id] = record.model_copy(update={
+        "status": status,
+        "resolved_at": datetime.now(timezone.utc),
+        "resolved_by": resolved_by,
     })

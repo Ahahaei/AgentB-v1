@@ -1,7 +1,11 @@
+import uuid
+from datetime import datetime, timezone
+
 from app import store
 from app.engine import classifier, executor
 from app.engine import policy as policy_engine
-from app.models.decision import DecisionResult
+from app.models.approval import ApprovalStatus, PendingApproval
+from app.models.decision import DecisionResult, ExecutionStatus
 from app.models.event import EVENT_LAYER_MAP, EventLayer
 from app.models.seller import SellerStatus
 
@@ -33,6 +37,20 @@ def run_pipeline(event_id: str) -> None:
         intent = classifier.classify(record.event_type)
         policy_result = policy_engine.evaluate(intent, seller, record.payload)
         execution_result = executor.execute(policy_result)
+
+        if execution_result.status == ExecutionStatus.ESCALATED:
+            approval_id = str(uuid.uuid4())
+            approval = PendingApproval(
+                id=approval_id,
+                event_id=event_id,
+                seller_id=record.seller_id,
+                intent=intent,
+                policy_result=policy_result,
+                status=ApprovalStatus.PENDING,
+                created_at=datetime.now(timezone.utc),
+            )
+            store.create_approval(approval)
+            execution_result = execution_result.model_copy(update={"approval_id": approval_id})
 
         result = DecisionResult(
             intent=intent,
