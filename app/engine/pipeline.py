@@ -2,6 +2,7 @@ from app import store
 from app.engine import classifier, executor
 from app.engine import policy as policy_engine
 from app.models.decision import DecisionResult
+from app.models.event import EVENT_LAYER_MAP, EventLayer
 from app.models.seller import SellerStatus
 
 
@@ -21,6 +22,14 @@ def run_pipeline(event_id: str) -> None:
                 f"Seller '{record.seller_id}' is not active (status: {seller.status.value})"
             )
 
+        layer = EVENT_LAYER_MAP[record.event_type]
+
+        if layer == EventLayer.DOMAIN:
+            # Layer 1 — record the fact, no decision needed
+            store.set_event_completed(event_id, result=None)
+            return
+
+        # Layer 2 — full decision pipeline
         intent = classifier.classify(record.event_type)
         policy_result = policy_engine.evaluate(intent, seller, record.payload)
         execution_result = executor.execute(policy_result)

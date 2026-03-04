@@ -34,7 +34,7 @@ def set_event_processing(event_id: str) -> None:
     })
 
 
-def set_event_completed(event_id: str, result: DecisionResult) -> None:
+def set_event_completed(event_id: str, result: Optional[DecisionResult]) -> None:
     record = _events[event_id]
     _events[event_id] = record.model_copy(update={
         "status": EventStatus.COMPLETED,
