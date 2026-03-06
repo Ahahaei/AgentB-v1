@@ -1,3 +1,4 @@
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -48,9 +49,16 @@ def run_pipeline(event_id: str) -> None:
                 policy_result=policy_result,
                 status=ApprovalStatus.PENDING,
                 created_at=datetime.now(timezone.utc),
+                slack_channel_id=seller.slack_channel_id,
             )
             store.create_approval(approval)
             execution_result = execution_result.model_copy(update={"approval_id": approval_id})
+
+            slack_enabled = os.environ.get("SLACK_ENABLED", "false").lower()
+            if slack_enabled == "true":
+                from app.slack import client as slack_client
+                ts = slack_client.send_approval_request(approval, seller.name)
+                store.set_approval_slack_ts(approval_id, ts)
 
         result = DecisionResult(
             intent=intent,

@@ -1,4 +1,10 @@
+import os
+
 import pytest
+
+# Pin Slack off before any test file imports main.py and triggers load_dotenv().
+# load_dotenv() defaults to override=False, so this value wins.
+os.environ["SLACK_ENABLED"] = "false"
 
 from app import store
 

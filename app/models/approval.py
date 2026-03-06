@@ -23,4 +23,6 @@ class PendingApproval(BaseModel):
     status: ApprovalStatus
     created_at: datetime
     resolved_at: Optional[datetime] = None
-    resolved_by: Optional[str] = None  # "api", "slack", etc.
+    resolved_by: Optional[str] = None  # "api" or Slack user_id
+    slack_channel_id: Optional[str] = None
+    slack_ts: Optional[str] = None  # Slack message timestamp, needed to update the message

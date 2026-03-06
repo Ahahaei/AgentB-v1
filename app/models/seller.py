@@ -36,3 +36,4 @@ class Seller(BaseModel):
     name: str
     status: SellerStatus
     policies: SellerPolicies
+    slack_channel_id: str  # channel where escalations are posted

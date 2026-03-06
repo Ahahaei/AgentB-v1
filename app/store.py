@@ -71,3 +71,8 @@ def resolve_approval(approval_id: str, status: ApprovalStatus, resolved_by: str)
         "resolved_at": datetime.now(timezone.utc),
         "resolved_by": resolved_by,
     })
+
+
+def set_approval_slack_ts(approval_id: str, ts: str) -> None:
+    record = _approvals[approval_id]
+    _approvals[approval_id] = record.model_copy(update={"slack_ts": ts})
