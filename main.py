@@ -1,6 +1,12 @@
+import os
+
+os.environ.setdefault("DATABASE_URL", "")
+
 from dotenv import load_dotenv
 
 load_dotenv()
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
@@ -9,7 +15,17 @@ from app.routers.events import router as events_router
 from app.routers.slack import router as slack_router
 from app.routers.webhooks import router as webhooks_router
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from app.db.engine import create_tables
+    from app.db.seed import seed_sellers
+    create_tables()
+    seed_sellers()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 app.include_router(events_router)
 app.include_router(webhooks_router)
 app.include_router(approvals_router)
