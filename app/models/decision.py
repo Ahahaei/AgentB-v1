@@ -29,6 +29,7 @@ class ExecutionResult(BaseModel):
     status: ExecutionStatus
     message: str
     approval_id: Optional[str] = None
+    sp_api_result: Optional[dict] = None
 
 
 class DecisionResult(BaseModel):

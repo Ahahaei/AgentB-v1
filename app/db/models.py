@@ -16,6 +16,7 @@ class SellerRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     slack_channel_id: Mapped[str] = mapped_column(String, nullable=False)
     policies: Mapped[Any] = mapped_column(JSON, nullable=False)
+    sp_api_credentials: Mapped[Optional[Any]] = mapped_column(JSON, nullable=True)
 
 
 class EventRow(Base):

@@ -5,6 +5,15 @@ from app.models.seller import (
     Seller,
     SellerPolicies,
     SellerStatus,
+    SpApiCredentials,
+)
+
+_PLACEHOLDER_CREDENTIALS = SpApiCredentials(
+    lwa_client_id="amzn1.application-oa2-client.PLACEHOLDER",
+    lwa_client_secret="PLACEHOLDER_SECRET",
+    lwa_refresh_token="Atzr|PLACEHOLDER_REFRESH_TOKEN",
+    marketplace_id="A15PK738MTQHUU",  # Vietnam marketplace
+    endpoint="https://sandbox.sellingpartnerapi-fe.amazon.com",
 )
 
 MOCK_SELLERS: list[Seller] = [
@@ -13,6 +22,7 @@ MOCK_SELLERS: list[Seller] = [
         name="Gadget Galaxy",
         status=SellerStatus.ACTIVE,
         slack_channel_id="C_PLACEHOLDER_S001",
+        sp_api_credentials=_PLACEHOLDER_CREDENTIALS,
         policies=SellerPolicies(
             inventory_low=InventoryPolicy(
                 reorder_point=5,
@@ -33,6 +43,7 @@ MOCK_SELLERS: list[Seller] = [
         name="Bulk Barn",
         status=SellerStatus.ACTIVE,
         slack_channel_id="C0AJBKT8U1L",
+        sp_api_credentials=_PLACEHOLDER_CREDENTIALS,
         policies=SellerPolicies(
             inventory_low=InventoryPolicy(
                 reorder_point=10,
@@ -53,6 +64,7 @@ MOCK_SELLERS: list[Seller] = [
         name="Dormant Shop",
         status=SellerStatus.INACTIVE,
         slack_channel_id="C_PLACEHOLDER_S003",
+        sp_api_credentials=_PLACEHOLDER_CREDENTIALS,
         policies=SellerPolicies(
             inventory_low=InventoryPolicy(
                 reorder_point=5,

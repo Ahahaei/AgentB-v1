@@ -39,6 +39,11 @@ def run_pipeline(event_id: str) -> None:
         policy_result = policy_engine.evaluate(intent, seller, record.payload)
         execution_result = executor.execute(policy_result)
 
+        if execution_result.status == ExecutionStatus.EXECUTED:
+            from app.sp_api import client as sp_api_client
+            sp_result = sp_api_client.execute_intent(intent, seller, record.payload, policy_result)
+            execution_result = execution_result.model_copy(update={"sp_api_result": sp_result})
+
         if execution_result.status == ExecutionStatus.ESCALATED:
             approval_id = str(uuid.uuid4())
             approval = PendingApproval(

@@ -38,6 +38,7 @@ def _seller_from_row(row: SellerRow) -> Seller:
         "status": row.status,
         "slack_channel_id": row.slack_channel_id,
         "policies": row.policies,
+        "sp_api_credentials": row.sp_api_credentials,
     })
 
 

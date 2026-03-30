@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel
 
@@ -31,9 +32,18 @@ class SellerPolicies(BaseModel):
     high_refund_rate: RefundRatePolicy
 
 
+class SpApiCredentials(BaseModel):
+    lwa_client_id: str
+    lwa_client_secret: str
+    lwa_refresh_token: str
+    marketplace_id: str
+    endpoint: str  # e.g. "https://sandbox.sellingpartnerapi-fe.amazon.com"
+
+
 class Seller(BaseModel):
     id: str
     name: str
     status: SellerStatus
     policies: SellerPolicies
-    slack_channel_id: str  # channel where escalations are posted
+    slack_channel_id: str
+    sp_api_credentials: Optional[SpApiCredentials] = None

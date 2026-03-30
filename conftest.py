@@ -2,6 +2,7 @@ import os
 
 # Must be set before any app imports trigger engine creation.
 os.environ["SLACK_ENABLED"] = "false"
+os.environ["SP_API_ENABLED"] = "false"
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import pytest
