@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 
 from app import store
+from app.engine.pipeline import execute_approved
 from app.models.approval import ApprovalStatus
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -24,7 +25,7 @@ def approve_approval(approval_id: str):
             status_code=409,
             detail=f"Approval '{approval_id}' is already {approval.status.value}",
         )
-    store.resolve_approval(approval_id, ApprovalStatus.APPROVED, resolved_by="api")
+    execute_approved(approval_id, resolved_by="api")
     return store.get_approval(approval_id)
 
 

@@ -160,3 +160,12 @@ def set_approval_slack_ts(approval_id: str, ts: str) -> None:
     with _session() as db:
         row = db.get(ApprovalRow, approval_id)
         row.slack_ts = ts
+
+
+def set_event_sp_api_result(event_id: str, sp_result: dict) -> None:
+    with _session() as db:
+        row = db.get(EventRow, event_id)
+        if row and row.result:
+            execution_result = {**row.result["execution_result"], "sp_api_result": sp_result}
+            row.result = {**row.result, "execution_result": execution_result}
+            row.updated_at = datetime.now(timezone.utc)

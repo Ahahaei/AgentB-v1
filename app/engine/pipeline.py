@@ -11,6 +11,21 @@ from app.models.event import EVENT_LAYER_MAP, EventLayer
 from app.models.seller import SellerStatus
 
 
+def execute_approved(approval_id: str, resolved_by: str) -> None:
+    store.resolve_approval(approval_id, ApprovalStatus.APPROVED, resolved_by=resolved_by)
+    approval = store.get_approval(approval_id)
+    event = store.get_event(approval.event_id)
+    seller = store.get_seller(approval.seller_id)
+    from app.sp_api import client as sp_api_client
+    sp_result = sp_api_client.execute_intent(
+        approval.intent,
+        seller,
+        event.payload,
+        approval.policy_result,
+    )
+    store.set_event_sp_api_result(approval.event_id, sp_result)
+
+
 def run_pipeline(event_id: str) -> None:
     store.set_event_processing(event_id)
     try:

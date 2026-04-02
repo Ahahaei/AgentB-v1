@@ -8,6 +8,7 @@ import urllib.parse
 from fastapi import APIRouter, HTTPException, Request
 
 from app import store
+from app.engine.pipeline import execute_approved
 from app.models.approval import ApprovalStatus
 from app.slack import client as slack_client
 
@@ -59,15 +60,13 @@ async def handle_interaction(request: Request):
         )
 
     if action_id == "approve_action":
-        new_status = ApprovalStatus.APPROVED
         resolution_text = f"✅ Approved by <@{slack_user_id}>"
+        execute_approved(approval_id, resolved_by=slack_user_id)
     elif action_id == "reject_action":
-        new_status = ApprovalStatus.REJECTED
         resolution_text = f"❌ Rejected by <@{slack_user_id}>"
+        store.resolve_approval(approval_id, ApprovalStatus.REJECTED, resolved_by=slack_user_id)
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {action_id}")
-
-    store.resolve_approval(approval_id, new_status, resolved_by=slack_user_id)
 
     # Update the original Slack message to replace buttons with resolution text
     updated = store.get_approval(approval_id)

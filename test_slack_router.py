@@ -143,6 +143,33 @@ def test_unknown_action_is_bad_request():
     assert resp.status_code == 400
 
 
+# --- post-approval SP API execution ---
+
+def test_approve_via_slack_executes_sp_api():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=INVENTORY_HIGH)
+        event_id = post_resp.json()["event_id"]
+        event_data = client.get(f"/events/{event_id}").json()
+        approval_id = event_data["result"]["execution_result"]["approval_id"]
+        _post_interaction(client, _make_body(approval_id, "approve_action", "U_ALICE"))
+        updated = client.get(f"/events/{event_id}").json()
+    sp = updated["result"]["execution_result"]["sp_api_result"]
+    assert sp is not None
+    assert sp["status"] == "success"
+    assert sp["order_id"].startswith("MOCK-PO-")
+
+
+def test_reject_via_slack_does_not_execute_sp_api():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=INVENTORY_HIGH)
+        event_id = post_resp.json()["event_id"]
+        event_data = client.get(f"/events/{event_id}").json()
+        approval_id = event_data["result"]["execution_result"]["approval_id"]
+        _post_interaction(client, _make_body(approval_id, "reject_action", "U_BOB"))
+        updated = client.get(f"/events/{event_id}").json()
+    assert updated["result"]["execution_result"]["sp_api_result"] is None
+
+
 # --- not found ---
 
 def test_approval_not_found():

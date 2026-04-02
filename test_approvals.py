@@ -133,3 +133,31 @@ def test_approve_after_reject_is_conflict():
         client.post(f"/approvals/{approval_id}/reject")
         resp = client.post(f"/approvals/{approval_id}/approve")
     assert resp.status_code == 409
+
+
+# --- post-approval SP API execution ---
+
+def test_approve_executes_sp_api():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=INVENTORY_HIGH)
+        event_id = post_resp.json()["event_id"]
+        event_data = client.get(f"/events/{event_id}").json()
+        approval_id = event_data["result"]["execution_result"]["approval_id"]
+        client.post(f"/approvals/{approval_id}/approve")
+        updated = client.get(f"/events/{event_id}").json()
+    sp = updated["result"]["execution_result"]["sp_api_result"]
+    assert sp is not None
+    assert sp["status"] == "success"
+    assert sp["sku"] == "BULK-01"
+    assert sp["order_id"].startswith("MOCK-PO-")
+
+
+def test_reject_does_not_execute_sp_api():
+    with TestClient(app) as client:
+        post_resp = client.post("/events", json=INVENTORY_HIGH)
+        event_id = post_resp.json()["event_id"]
+        event_data = client.get(f"/events/{event_id}").json()
+        approval_id = event_data["result"]["execution_result"]["approval_id"]
+        client.post(f"/approvals/{approval_id}/reject")
+        updated = client.get(f"/events/{event_id}").json()
+    assert updated["result"]["execution_result"]["sp_api_result"] is None
