@@ -1,8 +1,11 @@
+import logging
 import os
 import uuid
 from datetime import datetime, timezone
 
 from app import store
+
+logger = logging.getLogger(__name__)
 from app.engine import classifier, executor
 from app.engine import policy as policy_engine
 from app.models.approval import ApprovalStatus, PendingApproval
@@ -16,6 +19,7 @@ def execute_approved(approval_id: str, resolved_by: str) -> None:
     approval = store.get_approval(approval_id)
     event = store.get_event(approval.event_id)
     seller = store.get_seller(approval.seller_id)
+    logger.info("approval=%s approved by %s — executing intent=%s", approval_id, resolved_by, approval.intent)
     from app.sp_api import client as sp_api_client
     sp_result = sp_api_client.execute_intent(
         approval.intent,
@@ -24,6 +28,7 @@ def execute_approved(approval_id: str, resolved_by: str) -> None:
         approval.policy_result,
     )
     store.set_event_sp_api_result(approval.event_id, sp_result)
+    logger.info("approval=%s sp_api_result=%s", approval_id, sp_result)
 
 
 def run_pipeline(event_id: str) -> None:
@@ -51,13 +56,16 @@ def run_pipeline(event_id: str) -> None:
 
         # Layer 2 — full decision pipeline
         intent = classifier.classify(record.event_type)
+        logger.info("event=%s seller=%s intent=%s", event_id, record.seller_id, intent)
         policy_result = policy_engine.evaluate(intent, seller, record.payload)
+        logger.info("event=%s risk=%s action=%s", event_id, policy_result.risk_level, policy_result.action)
         execution_result = executor.execute(policy_result)
 
         if execution_result.status == ExecutionStatus.EXECUTED:
             from app.sp_api import client as sp_api_client
             sp_result = sp_api_client.execute_intent(intent, seller, record.payload, policy_result)
             execution_result = execution_result.model_copy(update={"sp_api_result": sp_result})
+            logger.info("event=%s auto-executed sp_result=%s", event_id, sp_result)
 
         if execution_result.status == ExecutionStatus.ESCALATED:
             approval_id = str(uuid.uuid4())
@@ -88,4 +96,5 @@ def run_pipeline(event_id: str) -> None:
         store.set_event_completed(event_id, result)
 
     except Exception as exc:
+        logger.exception("event=%s pipeline failed: %s", event_id, exc)
         store.set_event_failed(event_id, str(exc))
