@@ -17,6 +17,7 @@ def seed_sellers() -> None:
                 name=seller.name,
                 status=seller.status.value,
                 slack_channel_id=seller.slack_channel_id,
+                slack_user_id=seller.slack_user_id,
                 policies=seller.policies.model_dump(mode="json"),
                 sp_api_credentials=(
                     seller.sp_api_credentials.model_dump(mode="json")

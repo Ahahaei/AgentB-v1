@@ -46,4 +46,5 @@ class Seller(BaseModel):
     status: SellerStatus
     policies: SellerPolicies
     slack_channel_id: str
+    slack_user_id: Optional[str] = None
     sp_api_credentials: Optional[SpApiCredentials] = None

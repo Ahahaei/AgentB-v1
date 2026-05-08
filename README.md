@@ -212,7 +212,8 @@ Adding a new platform requires: a new webhook router, a new API client under `ap
 - "Show my pending approvals"
 - "What is my current refund rate?"
 
-An LLM layer extracts structured intent from free-text. The policy engine retains final authority over all execution decisions.
+**Design decision — tool calling, not intent parsing:**
+The conversational layer uses Claude's native tool/function calling rather than an ad-hoc parse-then-route pattern. Actions (`reorder_sku`, `check_inventory`, `list_approvals`) are defined as typed tools exposed to the LLM. The LLM selects which tool to call and extracts parameters directly — no separate intent classifier, no regex parsing of LLM output. The tool implementation then validates against the policy engine before executing. This keeps routing implicit, parameters structured, and the policy layer deterministic regardless of how the input arrived.
 
 **Configuration:**
 ```env
@@ -418,7 +419,7 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 | Post-approval SP API execution | Not built |
 | Slack OAuth (multi-workspace onboarding) | Not built |
 | Seller onboarding API | Not built |
-| Layer 3 — AI insight signal generation | Not built |
+| Layer 3 —  insight signal generation | Not built |
 | Conversational Slack mode | Not built |
 | LLM integration | Not built |
 | Additional platform adapters (Shopify, Lazada) | Not built |
@@ -428,10 +429,189 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 
 ## What's Next
 
-1. **Post-approval SP API execution** — close the full loop: approve in Slack → execute via platform API
+1. **Post-approval SP API execution** — close the full loop: approve in Slack → execute via platform API (done)
 2. **Slack OAuth + multi-workspace** — each seller installs the bot into their own workspace
 3. **Seller onboarding API** — `POST /sellers`, credential registration, Slack user linking
-4. **Layer 3 signal generation** — scheduled AI jobs that emit proactive insight events into the pipeline
-5. **LLM integration** — enriched escalation messages, conversational Slack commands
+4. **Layer 3 signal generation** — scheduled AI jobs that emit proactive insight events into the pipeline ( this part delayed indefintely)
+5. **LLM integration** — enriched escalation messages, conversational Slack commands, retrieving information.
 6. **Additional platform adapters** — Shopify, Lazada, Tiki
-7. **AWS deployment** — ECS + RDS + SQS + Lambda + Secrets Manager
+7. **AWS deployment** — ECS + RDS + SQS + Lambda + Secrets Manager (inprogress)
+
+
+Deployment steps
+NOW: Step 1 — ECR (push your image) (DONE)
+
+AWS Console → ECR → Create repository → name: seller-ops-api
+
+Click "View push commands" — AWS gives you 4 commands to run locally. These are the only terminal commands in the whole process:
+
+
+aws ecr get-login-password ... | docker login ...
+docker build -t seller-ops-api .
+docker tag seller-ops-api:latest <your-ecr-url>
+docker push <your-ecr-url>
+Step 2 — RDS PostgreSQL (DONE)
+
+RDS → Create database → PostgreSQL → Free tier
+
+Instance: db.t3.micro
+Username: postgres, set a password
+VPC: default VPC (important — ECS will use same VPC)
+Public access: No
+Note the endpoint URL when created
+Step 3 — SSM Parameter Store (secrets) (DONE)
+
+Systems Manager → Parameter Store → Create parameter, repeat for each:
+
+Name	Value	Type
+/seller-ops/DATABASE_URL	postgresql://postgres:password@rds-endpoint:5432/postgres	SecureString
+/seller-ops/SLACK_BOT_TOKEN	xoxb-...	SecureString
+/seller-ops/SLACK_SIGNING_SECRET	...	SecureString
+/seller-ops/SLACK_ENABLED	true	String
+/seller-ops/SP_API_ENABLED	false	String
+Step 4 — Security Groups
+
+EC2 → Security Groups → Create 3 groups: (DONE)
+
+alb-sg: inbound 80 + 443 from 0.0.0.0/0
+ecs-sg: inbound 8000 from alb-sg only
+rds-sg: inbound 5432 from ecs-sg only
+Attach rds-sg to your RDS instance (Modify → Security group).
+
+Step 5 — IAM Role for ECS
+
+IAM → Roles → Create role → ECS Task use case
+
+Attach these policies:
+
+AmazonECSTaskExecutionRolePolicy (pull from ECR, write logs)
+AmazonSSMReadOnlyAccess (read Parameter Store secrets)
+Name it seller-ops-task-execution-role.
+
+Step 6 — ECS Cluster
+
+ECS → Clusters → Create cluster
+
+Name: seller-ops-cluster
+Infrastructure: AWS Fargate
+Step 7 — Task Definition
+
+ECS → Task Definitions → Create new
+
+Launch type: Fargate
+CPU: 0.25 vCPU, Memory: 0.5 GB
+Task execution role: seller-ops-task-execution-role
+Container:
+Image: your ECR URL
+Port: 8000
+Log collection: CloudWatch (auto-creates log group)
+Environment variables → ValueFrom (SSM) for each parameter:
+DATABASE_URL → arn:aws:ssm:region:account:parameter/seller-ops/DATABASE_URL
+repeat for all 5
+Step 8 — ALB
+
+EC2 → Load Balancers → Create → Application Load Balancer
+
+Internet-facing
+VPC: default, select all availability zones
+Security group: alb-sg
+Listener: HTTP port 80
+Target group:
+Type: IP (required for Fargate)
+Protocol: HTTP, Port 8000
+Health check path: /health
+Step 9 — ECS Service
+
+ECS → your cluster → Services → Create
+
+Task definition: what you created in Step 7
+Service type: Replica, count: 1
+VPC: default, select subnets
+Security group: ecs-sg
+Load balancer: attach the ALB → select the target group from Step 8
+Deploy. ECS pulls the image, starts the container, ALB starts routing.
+
+Step 10 — Get URL, update Slack
+
+EC2 → Load Balancers → copy the DNS name (e.g. seller-ops-xxxx.us-east-1.elb.amazonaws.com)
+
+Slack app dashboard → Interactivity & Shortcuts → Request URL:
+
+
+http://seller-ops-xxxx.us-east-1.elb.amazonaws.com/slack/interactions
+
+
+LLM integration steps
+Phase 1 — Seller identity (unchanged)
+Alembic migration: add slack_user_id to sellers
+Update SellerRow ORM + Seller Pydantic model
+Add get_seller_by_slack_user_id(db, user_id) to store.py
+Update MOCK_SELLERS with mock user IDs
+Tests
+Phase 2 — Slack Events API endpoint (unchanged)
+POST /slack/events — URL verification challenge + HMAC (reuse existing verification code)
+Filter bot's own messages (user == bot user ID)
+Look up seller via slack_user_id
+Return 200 immediately, process in BackgroundTask
+Phase 3 — Tool definitions + Claude integration (replaces the old intent extractor)
+Add anthropic to requirements.txt
+Add ANTHROPIC_API_KEY to .env
+Create app/llm/tools.py — tool schemas as typed dicts:
+
+TOOLS = [
+  {
+    "name": "reorder_sku",
+    "description": "Reorder stock for a given SKU.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "sku":      {"type": "string"},
+        "quantity": {"type": "integer"}
+      },
+      "required": ["sku", "quantity"]
+    }
+  },
+  {
+    "name": "list_approvals",
+    "description": "List the seller's pending approvals.",
+    "input_schema": {"type": "object", "properties": {}}
+  },
+  {
+    "name": "get_refund_rate",
+    "description": "Return the seller's current refund rate.",
+    "input_schema": {"type": "object", "properties": {}}
+  }
+]
+Create app/llm/agent.py:
+Takes (message_text, seller, db)
+Calls Claude with the TOOLS list and a system prompt that gives it seller context
+Receives a tool_use block in the response
+Dispatches to the tool implementation (Phase 4)
+Sends the result back to the seller's Slack channel
+No JSON parsing, no regex, no intent router. The tool_use.name + tool_use.input come out structured.
+
+Phase 4 — Tool implementations
+Each tool is a function that contains its own policy guard:
+
+reorder_sku(sku, quantity, seller, db)
+
+Construct a synthetic EventInput (new event type MANUAL_REORDER or reuse inventory_low — you've already decided, but either works cleanly here)
+Call run_pipeline() — the existing policy engine runs, so a 10,000-unit request still gets escalated if it exceeds auto_approve_max_units
+Return "Reorder approved and submitted" or "Escalated for your approval — check Slack"
+list_approvals(seller, db)
+
+store.get_pending_approvals_for_seller(seller_id)
+Format as a readable Slack message listing pending items
+get_refund_rate(seller, db)
+
+Query events table for high_refund_rate_detected events for this seller
+Format and return the most recent rate
+The policy engine is not bypassed — it's the guard inside reorder_sku. The LLM never touches execution decisions.
+
+Phase 5 — Wire and test
+Connect /slack/events → agent.handle_message()
+Deduplication: track event_id to avoid processing Slack retries twice (simple in-memory set or DB column)
+Tests:
+Unit tests for each tool implementation (mock DB, mock pipeline)
+Agent tests with mocked Anthropic client — verify correct tool dispatch for known inputs
+Endpoint tests for /slack/events (challenge handshake, HMAC rejection, unknown seller)

@@ -2,6 +2,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Optional
 
+from sqlalchemy import select
+
 from app.db.engine import SessionLocal
 from app.db.models import ApprovalRow, EventRow, SellerRow
 from app.models.approval import ApprovalStatus, PendingApproval
@@ -37,6 +39,7 @@ def _seller_from_row(row: SellerRow) -> Seller:
         "name": row.name,
         "status": row.status,
         "slack_channel_id": row.slack_channel_id,
+        "slack_user_id": row.slack_user_id,
         "policies": row.policies,
         "sp_api_credentials": row.sp_api_credentials,
     })
@@ -77,6 +80,14 @@ def _approval_from_row(row: ApprovalRow) -> PendingApproval:
 def get_seller(seller_id: str) -> Optional[Seller]:
     with _session() as db:
         row = db.get(SellerRow, seller_id)
+        return _seller_from_row(row) if row else None
+
+
+def get_seller_by_slack_user_id(slack_user_id: str) -> Optional[Seller]:
+    with _session() as db:
+        row = db.execute(
+            select(SellerRow).where(SellerRow.slack_user_id == slack_user_id)
+        ).scalar_one_or_none()
         return _seller_from_row(row) if row else None
 
 
