@@ -19,7 +19,7 @@ def evaluate(intent: Intent, seller: Seller, payload: dict) -> PolicyResult:
 
 def _evaluate_reorder(seller: Seller, payload: dict) -> PolicyResult:
     pol = seller.policies.inventory_low
-    qty = pol.reorder_quantity
+    qty = payload.get("requested_quantity", pol.reorder_quantity)
     spend = qty * pol.unit_cost
     sku = payload.get("sku", "unknown")
 

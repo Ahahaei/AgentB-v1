@@ -8,7 +8,7 @@ from app.db.engine import SessionLocal
 from app.db.models import ApprovalRow, EventRow, SellerRow
 from app.models.approval import ApprovalStatus, PendingApproval
 from app.models.decision import DecisionResult
-from app.models.event import EventRecord, EventStatus
+from app.models.event import EventRecord, EventStatus, EventType
 from app.models.seller import Seller
 
 
@@ -171,6 +171,32 @@ def set_approval_slack_ts(approval_id: str, ts: str) -> None:
     with _session() as db:
         row = db.get(ApprovalRow, approval_id)
         row.slack_ts = ts
+
+
+def get_pending_approvals_for_seller(seller_id: str) -> list[PendingApproval]:
+    with _session() as db:
+        rows = db.execute(
+            select(ApprovalRow)
+            .where(ApprovalRow.seller_id == seller_id)
+            .where(ApprovalRow.status == ApprovalStatus.PENDING.value)
+            .order_by(ApprovalRow.created_at.desc())
+        ).scalars().all()
+        return [_approval_from_row(row) for row in rows]
+
+
+def get_recent_events_by_type(
+    seller_id: str, event_type: EventType, limit: int = 1
+) -> list[EventRecord]:
+    with _session() as db:
+        rows = db.execute(
+            select(EventRow)
+            .where(EventRow.seller_id == seller_id)
+            .where(EventRow.event_type == event_type.value)
+            .where(EventRow.status == EventStatus.COMPLETED.value)
+            .order_by(EventRow.created_at.desc())
+            .limit(limit)
+        ).scalars().all()
+        return [_event_from_row(row) for row in rows]
 
 
 def set_event_sp_api_result(event_id: str, sp_result: dict) -> None:

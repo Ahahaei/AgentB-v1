@@ -83,3 +83,12 @@ def update_message(channel_id: str, ts: str, text: str) -> None:
         text=text,
         blocks=[{"type": "section", "text": {"type": "mrkdwn", "text": text}}],
     )
+
+
+def send_message(channel: str, text: str) -> None:
+    """Send a plain text message to a channel or DM."""
+    slack_enabled = os.environ.get("SLACK_ENABLED", "false").lower()
+    if slack_enabled != "true":
+        return
+    client = _get_client()
+    client.chat_postMessage(channel=channel, text=text)

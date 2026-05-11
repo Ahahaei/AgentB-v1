@@ -1,6 +1,8 @@
 import logging
 
+from app.llm.agent import run_agent
 from app.models.seller import Seller
+from app.slack import client as slack_client
 
 logger = logging.getLogger(__name__)
 
@@ -8,13 +10,15 @@ logger = logging.getLogger(__name__)
 def handle_message(seller: Seller, message_text: str, channel: str) -> None:
     """
     Entry point for conversational Slack messages.
-
-    Phase 3 replaces this stub with the LLM tool-calling agent.
-    The seller is already resolved and active at this point.
+    Calls the LLM agent, then posts the response back to the sender's channel.
     """
     logger.info(
-        "Received message from seller %s (channel=%s): %r",
-        seller.id,
-        channel,
-        message_text,
+        "seller=%s channel=%s message=%r", seller.id, channel, message_text
     )
+    try:
+        response = run_agent(message_text, seller)
+    except Exception:
+        logger.exception("seller=%s agent failed", seller.id)
+        response = "Something went wrong. Please try again."
+
+    slack_client.send_message(channel, response)
