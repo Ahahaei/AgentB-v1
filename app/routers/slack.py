@@ -5,14 +5,19 @@ import os
 import time
 import urllib.parse
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from app import store
 from app.engine.pipeline import execute_approved
 from app.models.approval import ApprovalStatus
 from app.slack import client as slack_client
+from app.slack.message_handler import handle_message
 
 router = APIRouter(prefix="/slack", tags=["slack"])
+
+# In-process deduplication: Slack retries on non-2xx or timeouts.
+# Storing seen event_ids prevents double-processing within a process lifetime.
+_seen_event_ids: set[str] = set()
 
 
 def _verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
@@ -73,4 +78,51 @@ async def handle_interaction(request: Request):
     if updated.slack_channel_id and updated.slack_ts:
         slack_client.update_message(updated.slack_channel_id, updated.slack_ts, resolution_text)
 
+    return {"ok": True}
+
+
+@router.post("/events")
+async def handle_event(request: Request, background_tasks: BackgroundTasks):
+    body = await request.body()
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+
+    if not _verify_signature(body, timestamp, signature):
+        raise HTTPException(status_code=401, detail="Invalid Slack signature")
+
+    data = json.loads(body)
+
+    # One-time URL verification handshake when registering the endpoint in Slack
+    if data.get("type") == "url_verification":
+        return {"challenge": data["challenge"]}
+
+    if data.get("type") != "event_callback":
+        return {"ok": True}
+
+    event = data.get("event", {})
+
+    # Ignore bot messages (including messages the bot itself sends)
+    if event.get("bot_id") or event.get("subtype") == "bot_message":
+        return {"ok": True}
+
+    # Only handle plain text messages
+    if event.get("type") != "message" or not event.get("text"):
+        return {"ok": True}
+
+    # Deduplication: Slack retries if it doesn't receive a timely 2xx response
+    event_id = data.get("event_id", "")
+    if event_id in _seen_event_ids:
+        return {"ok": True}
+    _seen_event_ids.add(event_id)
+
+    slack_user_id = event.get("user", "")
+    message_text = event.get("text", "").strip()
+    channel = event.get("channel", "")
+
+    # Resolve seller — unknown users are silently dropped (don't let Slack retry)
+    seller = store.get_seller_by_slack_user_id(slack_user_id)
+    if seller is None:
+        return {"ok": True}
+
+    background_tasks.add_task(handle_message, seller, message_text, channel)
     return {"ok": True}

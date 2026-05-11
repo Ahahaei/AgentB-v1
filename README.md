@@ -615,3 +615,5 @@ Tests:
 Unit tests for each tool implementation (mock DB, mock pipeline)
 Agent tests with mocked Anthropic client — verify correct tool dispatch for known inputs
 Endpoint tests for /slack/events (challenge handshake, HMAC rejection, unknown seller)
+
+SLACK note One thing to do before going live: register the endpoint in your Slack app dashboard under Event Subscriptions → Request URL: https://your-domain/slack/events, subscribe to message.im (DMs to the bot).

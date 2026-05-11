@@ -1,11 +1,11 @@
 import logging
 import os
 
-os.environ.setdefault("DATABASE_URL", "")
-
 from dotenv import load_dotenv
 
 load_dotenv()
+
+os.environ.setdefault("DATABASE_URL", "")
 
 from contextlib import asynccontextmanager
 
