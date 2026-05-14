@@ -7,7 +7,7 @@ from alembic import context
 
 config = context.config
 
-if config.config_file_name is not None:
+if config.config_file_name is not None and not os.environ.get("RUNNING_IN_APP"):
     fileConfig(config.config_file_name)
 
 # Point Alembic at our ORM models for autogenerate support

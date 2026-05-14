@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI):
     from alembic.config import Config
     from alembic import command
     from app.db.seed import seed_sellers
+    os.environ["RUNNING_IN_APP"] = "1"
     alembic_cfg = Config("alembic.ini")
     command.upgrade(alembic_cfg, "head")
     seed_sellers()

@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import hmac
 import json
 import os
@@ -14,6 +15,7 @@ from app.slack import client as slack_client
 from app.slack.message_handler import handle_message
 
 router = APIRouter(prefix="/slack", tags=["slack"])
+logger = logging.getLogger(__name__)
 
 # In-process deduplication: Slack retries on non-2xx or timeouts.
 # Storing seen event_ids prevents double-processing within a process lifetime.
@@ -91,6 +93,7 @@ async def handle_event(request: Request, background_tasks: BackgroundTasks):
         raise HTTPException(status_code=401, detail="Invalid Slack signature")
 
     data = json.loads(body)
+    logger.info("slack /events type=%s", data.get("type"))
 
     # One-time URL verification handshake when registering the endpoint in Slack
     if data.get("type") == "url_verification":
@@ -100,6 +103,8 @@ async def handle_event(request: Request, background_tasks: BackgroundTasks):
         return {"ok": True}
 
     event = data.get("event", {})
+    logger.info("slack event subtype=%s bot_id=%s event_type=%s user=%s",
+                event.get("subtype"), event.get("bot_id"), event.get("type"), event.get("user"))
 
     # Ignore bot messages (including messages the bot itself sends)
     if event.get("bot_id") or event.get("subtype") == "bot_message":
@@ -121,6 +126,7 @@ async def handle_event(request: Request, background_tasks: BackgroundTasks):
 
     # Resolve seller — unknown users are silently dropped (don't let Slack retry)
     seller = store.get_seller_by_slack_user_id(slack_user_id)
+    logger.info("slack seller lookup user=%s found=%s", slack_user_id, seller is not None)
     if seller is None:
         return {"ok": True}
 
