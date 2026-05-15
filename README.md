@@ -1,4 +1,4 @@
-# Seller Operations Agent
+# Seller Operations Agent (REAL opperation driven commercial product, with users. Not a portfolios)
 
 An autonomous, multi-tenant operational agent for e-commerce sellers. Built on a platform adapter architecture, it is designed to work across multiple marketplaces — Amazon, Shopify, Lazada, Tiki, and others — where each platform is a pluggable adapter that translates platform-specific events and APIs into the agent's internal model. Amazon SP API is the first adapter implemented.
 
@@ -207,13 +207,14 @@ Adding a new platform requires: a new webhook router, a new API client under `ap
 
 **Security:** All interactions verified using `SLACK_SIGNING_SECRET` via HMAC-SHA256. Requests older than 5 minutes are rejected.
 
-**Conversational mode (planned):** Sellers can message the bot directly in natural language:
+**Conversational mode (in progress):** Sellers can message the bot directly in natural language:
 - "Reorder 50 units of WIDGET-42"
 - "Show my pending approvals"
 - "What is my current refund rate?"
+- "Report during XXX period"
 
 **Design decision — tool calling, not intent parsing:**
-The conversational layer uses Claude's native tool/function calling rather than an ad-hoc parse-then-route pattern. Actions (`reorder_sku`, `check_inventory`, `list_approvals`) are defined as typed tools exposed to the LLM. The LLM selects which tool to call and extracts parameters directly — no separate intent classifier, no regex parsing of LLM output. The tool implementation then validates against the policy engine before executing. This keeps routing implicit, parameters structured, and the policy layer deterministic regardless of how the input arrived.
+The conversational layer uses Claude's native tool/function calling rather than an ad-hoc parse-then-route pattern. Actions (`reorder_sku`, `check_inventory`, `list_approvals`,`get_store_summary`) are defined as typed tools exposed to the LLM. The LLM selects which tool to call and extracts parameters directly — no separate intent classifier, no regex parsing of LLM output. The tool implementation then validates against the policy engine before executing. This keeps routing implicit, parameters structured, and the policy layer deterministic regardless of how the input arrived.
 
 **Configuration:**
 ```env
@@ -253,12 +254,12 @@ endpoint            - regional SP API base URL
 
 ## LLM Integration
 
-LLM is a **reasoning and extraction layer**, not a decision layer. The policy engine remains deterministic and auditable.
+LLM is a **reasoning, tool selecting, and extraction layer**, not a final decision layer. The policy engine remains deterministic and auditable.
 
 | Role | Where | Status |
 |---|---|---|
-| Layer 3 signal generation | Scheduled AI jobs → insight events | Planned |
-| Intent classification | Conversational Slack messages | Planned |
+| Layer 3 signal generation | Scheduled AI jobs → insight events | halt indefinitely |
+| Intent classification, tool selection | Conversational Slack messages | In Progress |
 | Structured extraction | Parse free-text commands | Planned |
 | Escalation enrichment | Plain-English context in Slack approval messages | Planned |
 | Decision assistance | Historical context alongside escalations | Planned |
@@ -414,13 +415,13 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 | Slack escalation (Block Kit messages) | Done |
 | Slack interaction handler (button clicks) | Done |
 | PostgreSQL persistence | Done |
-| SP API auth (LWA token exchange) | Done |
+| SP API auth (LWA token exchange) | In progress |
 | SP API execution (mock + real structure) | Done (mock only) |
 | Post-approval SP API execution | Not built |
 | Slack OAuth (multi-workspace onboarding) | Not built |
 | Seller onboarding API | Not built |
 | Layer 3 —  insight signal generation | Not built |
-| Conversational Slack mode | Not built |
+| Conversational Slack mode | In progress |
 | LLM integration | Not built |
 | Additional platform adapters (Shopify, Lazada) | Not built |
 | AWS deployment | Not built |
@@ -433,7 +434,7 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 2. **Slack OAuth + multi-workspace** — each seller installs the bot into their own workspace
 3. **Seller onboarding API** — `POST /sellers`, credential registration, Slack user linking
 4. **Layer 3 signal generation** — scheduled AI jobs that emit proactive insight events into the pipeline ( this part delayed indefintely)
-5. **LLM integration** — enriched escalation messages, conversational Slack commands, retrieving information.
+5. **LLM integration** — enriched escalation messages, conversational Slack commands, retrieving information. (in progress)
 6. **Additional platform adapters** — Shopify, Lazada, Tiki
 7. **AWS deployment** — ECS + RDS + SQS + Lambda + Secrets Manager (inprogress)
 
