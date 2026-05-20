@@ -91,6 +91,39 @@ def get_seller_by_slack_user_id(slack_user_id: str) -> Optional[Seller]:
         return _seller_from_row(row) if row else None
 
 
+def create_seller(seller: Seller) -> None:
+    with _session() as db:
+        db.add(SellerRow(
+            id=seller.id,
+            name=seller.name,
+            status=seller.status.value,
+            slack_channel_id=seller.slack_channel_id,
+            slack_user_id=seller.slack_user_id,
+            policies=seller.policies.model_dump(mode="json"),
+            sp_api_credentials=(
+                seller.sp_api_credentials.model_dump(mode="json")
+                if seller.sp_api_credentials else None
+            ),
+        ))
+
+
+def update_seller(seller_id: str, updates: dict) -> Optional[Seller]:
+    with _session() as db:
+        row = db.get(SellerRow, seller_id)
+        if row is None:
+            return None
+        for field, value in updates.items():
+            setattr(row, field, value)
+        db.flush()
+        return _seller_from_row(row)
+
+
+def list_sellers() -> list[Seller]:
+    with _session() as db:
+        rows = db.execute(select(SellerRow)).scalars().all()
+        return [_seller_from_row(row) for row in rows]
+
+
 # --- Events ---
 
 def create_event(record: EventRecord) -> None:

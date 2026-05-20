@@ -269,7 +269,7 @@ LLM is a **reasoning, tool selecting, and extraction layer**, not a final decisi
 - Replace the policy engine
 - Act without a deterministic rule validating the action first
 
----
+
 
 ## Database
 
@@ -542,7 +542,7 @@ Slack app dashboard → Interactivity & Shortcuts → Request URL:
 http://seller-ops-xxxx.us-east-1.elb.amazonaws.com/slack/interactions
 
 
-LLM integration steps
+LLM integration steps - DONE
 Phase 1 — Seller identity (unchanged)
 Alembic migration: add slack_user_id to sellers
 Update SellerRow ORM + Seller Pydantic model
@@ -617,4 +617,33 @@ Unit tests for each tool implementation (mock DB, mock pipeline)
 Agent tests with mocked Anthropic client — verify correct tool dispatch for known inputs
 Endpoint tests for /slack/events (challenge handshake, HMAC rejection, unknown seller)
 
-SLACK note One thing to do before going live: register the endpoint in your Slack app dashboard under Event Subscriptions → Request URL: https://your-domain/slack/events, subscribe to message.im (DMs to the bot).
+
+Multitenant set up steps
+Seller management API production steps
+
+Sellers currently exist only via seed data. A real product needs a management API to onboard and configure sellers without touching code.
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/sellers` | Onboard a new seller (name, policies, Slack channel) |
+| `GET` | `/sellers/{id}` | Fetch seller details |
+| `PATCH` | `/sellers/{id}` | Update policies, Slack config, or status |
+
+Zero SP API dependency. Pure DB + REST. This is what makes the system actually multi-tenant rather than hardcoded seed data — each seller is a first-class entity managed through the API, not a fixture.
+
+---
+
+Amazon OAUth onboarding steps
+
+When a seller wants to connect their Amazon account, they go through Login With Amazon (LWA) OAuth. The application credentials (`lwa_client_id`, `lwa_client_secret`) are registered once by the developer. Each seller then authorizes the app independently to produce their own `lwa_refresh_token`, which is stored per-seller in the DB.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/oauth/authorize` | Redirect seller to Amazon's LWA authorization URL |
+| `GET` | `/oauth/callback` | Receive authorization code → exchange for refresh token → store in `sp_api_credentials` |
+
+The token exchange hits `https://api.amazon.com/auth/o2/token`. Once stored, the seller's refresh token is used by `app/sp_api/auth.py` on every SP API call — no further OAuth interaction required until the token is revoked.
+
+The callback endpoint can be built and tested structurally without production SP API credentials. Real token exchange requires a registered SP API application (Seller Central → Apps & Services → Develop Apps).
+
+---
