@@ -66,6 +66,8 @@ async def handle_interaction(request: Request):
             detail=f"Approval '{approval_id}' is already {approval.status.value}",
         )
 
+    seller = store.get_seller(approval.seller_id)
+
     if action_id == "approve_action":
         resolution_text = f"✅ Approved by <@{slack_user_id}>"
         execute_approved(approval_id, resolved_by=slack_user_id)
@@ -77,8 +79,13 @@ async def handle_interaction(request: Request):
 
     # Update the original Slack message to replace buttons with resolution text
     updated = store.get_approval(approval_id)
-    if updated.slack_channel_id and updated.slack_ts:
-        slack_client.update_message(updated.slack_channel_id, updated.slack_ts, resolution_text)
+    if updated.slack_channel_id and updated.slack_ts and seller and seller.slack_credentials:
+        slack_client.update_message(
+            updated.slack_channel_id,
+            updated.slack_ts,
+            resolution_text,
+            seller.slack_credentials.bot_token,
+        )
 
     return {"ok": True}
 
@@ -128,6 +135,9 @@ async def handle_event(request: Request, background_tasks: BackgroundTasks):
     seller = store.get_seller_by_slack_user_id(slack_user_id)
     logger.info("slack seller lookup user=%s found=%s", slack_user_id, seller is not None)
     if seller is None:
+        return {"ok": True}
+
+    if seller.slack_credentials is None:
         return {"ok": True}
 
     background_tasks.add_task(handle_message, seller, message_text, channel)

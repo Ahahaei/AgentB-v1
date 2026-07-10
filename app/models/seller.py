@@ -40,11 +40,16 @@ class SpApiCredentials(BaseModel):
     endpoint: str  # e.g. "https://sandbox.sellingpartnerapi-fe.amazon.com"
 
 
+class SlackCredentials(BaseModel):
+    bot_token: str
+
+
 class Seller(BaseModel):
     id: str
     name: str
     status: SellerStatus
     policies: SellerPolicies
-    slack_channel_id: str
+    slack_channel_id: Optional[str] = None  # notification channel for this seller
     slack_user_id: Optional[str] = None
     sp_api_credentials: Optional[SpApiCredentials] = None
+    slack_credentials: Optional[SlackCredentials] = None

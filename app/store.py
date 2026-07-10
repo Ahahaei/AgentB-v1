@@ -42,6 +42,7 @@ def _seller_from_row(row: SellerRow) -> Seller:
         "slack_user_id": row.slack_user_id,
         "policies": row.policies,
         "sp_api_credentials": row.sp_api_credentials,
+        "slack_credentials": row.slack_credentials,
     })
 
 
@@ -103,6 +104,10 @@ def create_seller(seller: Seller) -> None:
             sp_api_credentials=(
                 seller.sp_api_credentials.model_dump(mode="json")
                 if seller.sp_api_credentials else None
+            ),
+            slack_credentials=(
+                seller.slack_credentials.model_dump(mode="json")
+                if seller.slack_credentials else None
             ),
         ))
 

@@ -1,5 +1,4 @@
 import logging
-import os
 import uuid
 from datetime import datetime, timezone
 
@@ -82,10 +81,9 @@ def run_pipeline(event_id: str) -> None:
             store.create_approval(approval)
             execution_result = execution_result.model_copy(update={"approval_id": approval_id})
 
-            slack_enabled = os.environ.get("SLACK_ENABLED", "false").lower()
-            if slack_enabled == "true":
+            if seller.slack_credentials is not None:
                 from app.slack import client as slack_client
-                ts = slack_client.send_approval_request(approval, seller.name)
+                ts = slack_client.send_approval_request(approval, seller.name, seller.slack_credentials.bot_token)
                 store.set_approval_slack_ts(approval_id, ts)
 
         result = DecisionResult(

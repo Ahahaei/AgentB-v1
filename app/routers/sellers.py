@@ -5,14 +5,14 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app import store
-from app.models.seller import Seller, SellerPolicies, SellerStatus
+from app.models.seller import Seller, SellerPolicies, SellerStatus, SlackCredentials
 
 router = APIRouter(prefix="/sellers", tags=["sellers"])
 
 
 class SellerCreate(BaseModel):
     name: str
-    slack_channel_id: str
+    slack_channel_id: Optional[str] = None
     slack_user_id: Optional[str] = None
     policies: SellerPolicies
 
@@ -23,6 +23,7 @@ class SellerUpdate(BaseModel):
     slack_user_id: Optional[str] = None
     status: Optional[SellerStatus] = None
     policies: Optional[SellerPolicies] = None
+    slack_credentials: Optional[SlackCredentials] = None
 
 
 @router.get("")
@@ -69,6 +70,8 @@ def update_seller(seller_id: str, body: SellerUpdate) -> Seller:
         updates["status"] = body.status.value
     if body.policies is not None:
         updates["policies"] = body.policies.model_dump(mode="json")
+    if body.slack_credentials is not None:
+        updates["slack_credentials"] = body.slack_credentials.model_dump(mode="json")
 
     if not updates:
         return seller

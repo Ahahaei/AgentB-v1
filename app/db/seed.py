@@ -23,6 +23,10 @@ def seed_sellers() -> None:
                     seller.sp_api_credentials.model_dump(mode="json")
                     if seller.sp_api_credentials else None
                 ),
+                slack_credentials=(
+                    seller.slack_credentials.model_dump(mode="json")
+                    if seller.slack_credentials else None
+                ),
             ))
         db.commit()
     except Exception:

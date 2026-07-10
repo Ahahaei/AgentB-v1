@@ -43,7 +43,7 @@ POST /events                   <- Layer 2: monitoring signals (low inventory, sp
 |  3. executor    -> ExecutionStatus       |
 |                                          |
 |  LOW risk  -> Platform API (auto-exec)   |
-|  HIGH risk -> PendingApproval + Slack    |
+|  HIGH risk -> AI agent analyst   + Slack |
 +------------------------------------------+
         |                    |
         v                    v
@@ -78,7 +78,7 @@ Raw facts from the platform. Stored for audit and history. No decision is made �
 Derived operational signals that require a response right now. Triggered by a single platform event crossing a threshold. Runs the full decision pipeline immediately.
 
 ### Layer 3 — Business Insight & Proactive Signals
-AI-generated signals that emerge from patterns over time, not from a single event. These are the most creative and highest-value signals — things the seller would never catch manually.
+AI-generated signals that emerge from patterns over time, not from a single event. These are the most creative and highest-value signals — things the seller would never catch manually. (DELAYED)
 
 **Risk signals:**
 - Refund rate climbing 2% per week for 3 consecutive weeks — flag before it hits the threshold
@@ -309,34 +309,10 @@ slack_channel_id, slack_ts
 | Public endpoint | ngrok | Application Load Balancer |
 | Container registry | Local Docker | ECR |
 
-**Production event flow:**
-```
-Webhook -> ALB -> ECS (FastAPI) -> SQS -> Lambda -> run_pipeline() -> RDS
-```
 
 SQS decouples ingestion from processing. Lambda scales independently from the API tier. Secrets Manager holds all credentials — nothing sensitive in environment variables or code.
 
----
 
-## Running Locally
-
-```bash
-# Start PostgreSQL
-docker run -d --name ops-postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 postgres:16
-
-# Install dependencies
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-# Run
-uvicorn main:app --reload
-
-# Test
-pytest
-```
 
 Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are pinned in `conftest.py` — no real external calls during testing.
 
@@ -347,10 +323,15 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 | Variable | Description |
 |---|---|
 | `DATABASE_URL` | SQLAlchemy connection string |
-| `SLACK_BOT_TOKEN` | Slack bot token (global fallback) |
-| `SLACK_SIGNING_SECRET` | Slack app signing secret |
-| `SLACK_ENABLED` | Enable real Slack API calls |
-| `SP_API_ENABLED` | Enable real Amazon SP API calls |
+| `SLACK_SIGNING_SECRET` | Slack app signing secret — verifies incoming Slack requests |
+| `SLACK_CLIENT_ID` | Slack app client ID — used in multi-workspace OAuth flow |
+| `SLACK_CLIENT_SECRET` | Slack app client secret — used in multi-workspace OAuth flow |
+| `SLACK_REDIRECT_URI` | Slack OAuth redirect URI |
+| `SP_API_ENABLED` | Enable real Amazon SP API calls (default: `false` → mock responses) |
+| `LWA_CLIENT_ID` | Amazon LWA app client ID — used in SP API OAuth flow |
+| `LWA_CLIENT_SECRET` | Amazon LWA app client secret — used in SP API OAuth flow |
+| `OAUTH_REDIRECT_URI` | Amazon SP API OAuth redirect URI |
+| `ANTHROPIC_API_KEY` | Anthropic API key — used by the conversational agent and LLM features |
 
 ---
 
@@ -369,7 +350,7 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 │   │   ├── event.py           # EventType, EventLayer, EventRecord
 │   │   ├── intent.py          # Intent enum
 │   │   ├── decision.py        # PolicyResult, ExecutionResult, DecisionResult
-│   │   ├── seller.py          # Seller, SellerPolicies, SpApiCredentials
+│   │   ├── seller.py          # Seller, SellerPolicies, SpApiCredentials, SlackCredentials
 │   │   └── approval.py        # PendingApproval, ApprovalStatus
 │   │
 │   ├── engine/
@@ -382,268 +363,32 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 │   │   ├── events.py          # POST /events, GET /events/{id}
 │   │   ├── webhooks.py        # POST /webhooks/sp-api
 │   │   ├── approvals.py       # GET/POST /approvals/{id}
-│   │   └── slack.py           # POST /slack/interactions
+│   │   ├── sellers.py         # POST/GET/PATCH /sellers — seller management API
+│   │   ├── slack.py           # POST /slack/interactions, POST /slack/events
+│   │   ├── slack_oauth.py     # GET /slack/authorize, GET /slack/callback
+│   │   └── oauth.py           # GET /oauth/authorize, GET /oauth/callback (Amazon LWA)
 │   │
 │   ├── sp_api/
-│   │   ├── auth.py            # LWA token exchange
+│   │   ├── auth.py            # LWA token exchange (refresh_token -> access_token)
 │   │   └── client.py          # execute_intent() -> SP API or mock
 │   │
 │   ├── slack/
-│   │   └── client.py          # send_approval_request(), update_message()
+│   │   ├── client.py          # send_approval_request(), update_message(), send_message()
+│   │   └── message_handler.py # Route incoming Slack messages to LLM agent
+│   │
+│   ├── llm/
+│   │   ├── agent.py           # Conversational agent — Anthropic tool-calling loop
+│   │   ├── tools.py           # Tool definitions (reorder_sku, list_approvals, get_refund_rate)
+│   │   └── tool_handlers.py   # Tool implementations — call pipeline or query store
 │   │
 │   ├── db/
-│   │   ├── engine.py          # SQLAlchemy engine, SessionLocal, create_tables()
+│   │   ├── engine.py          # SQLAlchemy engine, SessionLocal
 │   │   ├── models.py          # ORM: SellerRow, EventRow, ApprovalRow
 │   │   └── seed.py            # Seed mock sellers on startup
 │   │
 │   └── mock/
 │       └── sellers.py         # MOCK_SELLERS for dev/test
 │
-└── test_*.py                  # 69 tests across all layers
+└── test_*.py                  # Tests across all layers
 ```
 
----
-
-## Current Status
-
-| Feature | Status |
-|---|---|
-| Two-layer event ingestion (L1 + L2) | Done |
-| Decision pipeline (classify -> policy -> execute) | Done |
-| Per-seller policy evaluation | Done |
-| PendingApproval entity + REST approve/reject | Done |
-| Slack escalation (Block Kit messages) | Done |
-| Slack interaction handler (button clicks) | Done |
-| PostgreSQL persistence | Done |
-| SP API auth (LWA token exchange) | In progress |
-| SP API execution (mock + real structure) | Done (mock only) |
-| Post-approval SP API execution | Not built |
-| Slack OAuth (multi-workspace onboarding) | Not built |
-| Seller onboarding API | Not built |
-| Layer 3 —  insight signal generation | Not built |
-| Conversational Slack mode | In progress |
-| LLM integration | Not built |
-| Additional platform adapters (Shopify, Lazada) | Not built |
-| AWS deployment | Not built |
-
----
-
-## What's Next
-
-1. **Post-approval SP API execution** — close the full loop: approve in Slack → execute via platform API (done)
-2. **Slack OAuth + multi-workspace** — each seller installs the bot into their own workspace
-3. **Seller onboarding API** — `POST /sellers`, credential registration, Slack user linking
-4. **Layer 3 signal generation** — scheduled AI jobs that emit proactive insight events into the pipeline ( this part delayed indefintely)
-5. **LLM integration** — enriched escalation messages, conversational Slack commands, retrieving information. (in progress)
-6. **Additional platform adapters** — Shopify, Lazada, Tiki
-7. **AWS deployment** — ECS + RDS + SQS + Lambda + Secrets Manager (inprogress)
-
-
-Deployment steps
-NOW: Step 1 — ECR (push your image) (DONE)
-
-AWS Console → ECR → Create repository → name: seller-ops-api
-
-Click "View push commands" — AWS gives you 4 commands to run locally. These are the only terminal commands in the whole process:
-
-
-aws ecr get-login-password ... | docker login ...
-docker build -t seller-ops-api .
-docker tag seller-ops-api:latest <your-ecr-url>
-docker push <your-ecr-url>
-Step 2 — RDS PostgreSQL (DONE)
-
-RDS → Create database → PostgreSQL → Free tier
-
-Instance: db.t3.micro
-Username: postgres, set a password
-VPC: default VPC (important — ECS will use same VPC)
-Public access: No
-Note the endpoint URL when created
-Step 3 — SSM Parameter Store (secrets) (DONE)
-
-Systems Manager → Parameter Store → Create parameter, repeat for each:
-
-Name	Value	Type
-/seller-ops/DATABASE_URL	postgresql://postgres:password@rds-endpoint:5432/postgres	SecureString
-/seller-ops/SLACK_BOT_TOKEN	xoxb-...	SecureString
-/seller-ops/SLACK_SIGNING_SECRET	...	SecureString
-/seller-ops/SLACK_ENABLED	true	String
-/seller-ops/SP_API_ENABLED	false	String
-Step 4 — Security Groups
-
-EC2 → Security Groups → Create 3 groups: (DONE)
-
-alb-sg: inbound 80 + 443 from 0.0.0.0/0
-ecs-sg: inbound 8000 from alb-sg only
-rds-sg: inbound 5432 from ecs-sg only
-Attach rds-sg to your RDS instance (Modify → Security group).
-
-Step 5 — IAM Role for ECS
-
-IAM → Roles → Create role → ECS Task use case
-
-Attach these policies:
-
-AmazonECSTaskExecutionRolePolicy (pull from ECR, write logs)
-AmazonSSMReadOnlyAccess (read Parameter Store secrets)
-Name it seller-ops-task-execution-role.
-
-Step 6 — ECS Cluster
-
-ECS → Clusters → Create cluster
-
-Name: seller-ops-cluster
-Infrastructure: AWS Fargate
-Step 7 — Task Definition
-
-ECS → Task Definitions → Create new
-
-Launch type: Fargate
-CPU: 0.25 vCPU, Memory: 0.5 GB
-Task execution role: seller-ops-task-execution-role
-Container:
-Image: your ECR URL
-Port: 8000
-Log collection: CloudWatch (auto-creates log group)
-Environment variables → ValueFrom (SSM) for each parameter:
-DATABASE_URL → arn:aws:ssm:region:account:parameter/seller-ops/DATABASE_URL
-repeat for all 5
-Step 8 — ALB
-
-EC2 → Load Balancers → Create → Application Load Balancer
-
-Internet-facing
-VPC: default, select all availability zones
-Security group: alb-sg
-Listener: HTTP port 80
-Target group:
-Type: IP (required for Fargate)
-Protocol: HTTP, Port 8000
-Health check path: /health
-Step 9 — ECS Service
-
-ECS → your cluster → Services → Create
-
-Task definition: what you created in Step 7
-Service type: Replica, count: 1
-VPC: default, select subnets
-Security group: ecs-sg
-Load balancer: attach the ALB → select the target group from Step 8
-Deploy. ECS pulls the image, starts the container, ALB starts routing.
-
-Step 10 — Get URL, update Slack
-
-EC2 → Load Balancers → copy the DNS name (e.g. seller-ops-xxxx.us-east-1.elb.amazonaws.com)
-
-Slack app dashboard → Interactivity & Shortcuts → Request URL:
-
-
-http://seller-ops-xxxx.us-east-1.elb.amazonaws.com/slack/interactions
-
-
-LLM integration steps - DONE
-Phase 1 — Seller identity (unchanged)
-Alembic migration: add slack_user_id to sellers
-Update SellerRow ORM + Seller Pydantic model
-Add get_seller_by_slack_user_id(db, user_id) to store.py
-Update MOCK_SELLERS with mock user IDs
-Tests
-Phase 2 — Slack Events API endpoint (unchanged)
-POST /slack/events — URL verification challenge + HMAC (reuse existing verification code)
-Filter bot's own messages (user == bot user ID)
-Look up seller via slack_user_id
-Return 200 immediately, process in BackgroundTask
-Phase 3 — Tool definitions + Claude integration (replaces the old intent extractor)
-Add anthropic to requirements.txt
-Add ANTHROPIC_API_KEY to .env
-Create app/llm/tools.py — tool schemas as typed dicts:
-
-TOOLS = [
-  {
-    "name": "reorder_sku",
-    "description": "Reorder stock for a given SKU.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "sku":      {"type": "string"},
-        "quantity": {"type": "integer"}
-      },
-      "required": ["sku", "quantity"]
-    }
-  },
-  {
-    "name": "list_approvals",
-    "description": "List the seller's pending approvals.",
-    "input_schema": {"type": "object", "properties": {}}
-  },
-  {
-    "name": "get_refund_rate",
-    "description": "Return the seller's current refund rate.",
-    "input_schema": {"type": "object", "properties": {}}
-  }
-]
-Create app/llm/agent.py:
-Takes (message_text, seller, db)
-Calls Claude with the TOOLS list and a system prompt that gives it seller context
-Receives a tool_use block in the response
-Dispatches to the tool implementation (Phase 4)
-Sends the result back to the seller's Slack channel
-No JSON parsing, no regex, no intent router. The tool_use.name + tool_use.input come out structured.
-
-Phase 4 — Tool implementations
-Each tool is a function that contains its own policy guard:
-
-reorder_sku(sku, quantity, seller, db)
-
-Construct a synthetic EventInput (new event type MANUAL_REORDER or reuse inventory_low — you've already decided, but either works cleanly here)
-Call run_pipeline() — the existing policy engine runs, so a 10,000-unit request still gets escalated if it exceeds auto_approve_max_units
-Return "Reorder approved and submitted" or "Escalated for your approval — check Slack"
-list_approvals(seller, db)
-
-store.get_pending_approvals_for_seller(seller_id)
-Format as a readable Slack message listing pending items
-get_refund_rate(seller, db)
-
-Query events table for high_refund_rate_detected events for this seller
-Format and return the most recent rate
-The policy engine is not bypassed — it's the guard inside reorder_sku. The LLM never touches execution decisions.
-
-Phase 5 — Wire and test
-Connect /slack/events → agent.handle_message()
-Deduplication: track event_id to avoid processing Slack retries twice (simple in-memory set or DB column)
-Tests:
-Unit tests for each tool implementation (mock DB, mock pipeline)
-Agent tests with mocked Anthropic client — verify correct tool dispatch for known inputs
-Endpoint tests for /slack/events (challenge handshake, HMAC rejection, unknown seller)
-
-
-Multitenant set up steps
-Seller management API production steps
-
-Sellers currently exist only via seed data. A real product needs a management API to onboard and configure sellers without touching code.
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/sellers` | Onboard a new seller (name, policies, Slack channel) |
-| `GET` | `/sellers/{id}` | Fetch seller details |
-| `PATCH` | `/sellers/{id}` | Update policies, Slack config, or status |
-
-Zero SP API dependency. Pure DB + REST. This is what makes the system actually multi-tenant rather than hardcoded seed data — each seller is a first-class entity managed through the API, not a fixture.
-
----
-
-Amazon OAUth onboarding steps
-
-When a seller wants to connect their Amazon account, they go through Login With Amazon (LWA) OAuth. The application credentials (`lwa_client_id`, `lwa_client_secret`) are registered once by the developer. Each seller then authorizes the app independently to produce their own `lwa_refresh_token`, which is stored per-seller in the DB.
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/oauth/authorize` | Redirect seller to Amazon's LWA authorization URL |
-| `GET` | `/oauth/callback` | Receive authorization code → exchange for refresh token → store in `sp_api_credentials` |
-
-The token exchange hits `https://api.amazon.com/auth/o2/token`. Once stored, the seller's refresh token is used by `app/sp_api/auth.py` on every SP API call — no further OAuth interaction required until the token is revoked.
-
-The callback endpoint can be built and tested structurally without production SP API credentials. Real token exchange requires a registered SP API application (Seller Central → Apps & Services → Develop Apps).
-
----

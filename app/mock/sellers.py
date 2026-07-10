@@ -5,6 +5,7 @@ from app.models.seller import (
     Seller,
     SellerPolicies,
     SellerStatus,
+    SlackCredentials,
     SpApiCredentials,
 )
 
@@ -24,6 +25,7 @@ MOCK_SELLERS: list[Seller] = [
         slack_channel_id="C0AJBKT8U1L",
         slack_user_id="U0AJA98PWVB",
         sp_api_credentials=_PLACEHOLDER_CREDENTIALS,
+        slack_credentials=SlackCredentials(bot_token="xoxb-mock-s001-token"),
         policies=SellerPolicies(
             inventory_low=InventoryPolicy(
                 reorder_point=5,
@@ -46,6 +48,7 @@ MOCK_SELLERS: list[Seller] = [
         slack_channel_id="C0AJBKT8U1L",
         slack_user_id="U_MOCK_S002",
         sp_api_credentials=_PLACEHOLDER_CREDENTIALS,
+        slack_credentials=SlackCredentials(bot_token="xoxb-mock-s002-token"),
         policies=SellerPolicies(
             inventory_low=InventoryPolicy(
                 reorder_point=10,
@@ -68,6 +71,7 @@ MOCK_SELLERS: list[Seller] = [
         slack_channel_id="C_PLACEHOLDER_S003",
         slack_user_id="U_MOCK_S003",
         sp_api_credentials=_PLACEHOLDER_CREDENTIALS,
+        slack_credentials=SlackCredentials(bot_token="xoxb-mock-s003-token"),
         policies=SellerPolicies(
             inventory_low=InventoryPolicy(
                 reorder_point=5,

@@ -21,4 +21,5 @@ def handle_message(seller: Seller, message_text: str, channel: str) -> None:
         logger.exception("seller=%s agent failed", seller.id)
         response = "Something went wrong. Please try again."
 
-    slack_client.send_message(channel, response)
+    bot_token = seller.slack_credentials.bot_token
+    slack_client.send_message(channel, response, bot_token)

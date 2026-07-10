@@ -1,15 +1,10 @@
-import os
-
 from slack_sdk import WebClient
 
 from app.models.approval import PendingApproval
 
 
-def _get_client() -> WebClient:
-    token = os.environ.get("SLACK_BOT_TOKEN")
-    if not token:
-        raise RuntimeError("SLACK_BOT_TOKEN is not set")
-    return WebClient(token=token)
+def _make_client(bot_token: str) -> WebClient:
+    return WebClient(token=bot_token)
 
 
 def _build_blocks(approval: PendingApproval, seller_name: str) -> list[dict]:
@@ -62,9 +57,9 @@ def _build_blocks(approval: PendingApproval, seller_name: str) -> list[dict]:
     ]
 
 
-def send_approval_request(approval: PendingApproval, seller_name: str) -> str:
+def send_approval_request(approval: PendingApproval, seller_name: str, bot_token: str) -> str:
     """Post an escalation message with Approve/Reject buttons. Returns the message ts."""
-    client = _get_client()
+    client = _make_client(bot_token)
     intent_label = approval.intent.value.replace("_", " ").title()
     resp = client.chat_postMessage(
         channel=approval.slack_channel_id,
@@ -74,9 +69,9 @@ def send_approval_request(approval: PendingApproval, seller_name: str) -> str:
     return resp["ts"]
 
 
-def update_message(channel_id: str, ts: str, text: str) -> None:
+def update_message(channel_id: str, ts: str, text: str, bot_token: str) -> None:
     """Replace the original escalation message content (removes buttons)."""
-    client = _get_client()
+    client = _make_client(bot_token)
     client.chat_update(
         channel=channel_id,
         ts=ts,
@@ -85,10 +80,7 @@ def update_message(channel_id: str, ts: str, text: str) -> None:
     )
 
 
-def send_message(channel: str, text: str) -> None:
+def send_message(channel: str, text: str, bot_token: str) -> None:
     """Send a plain text message to a channel or DM."""
-    slack_enabled = os.environ.get("SLACK_ENABLED", "false").lower()
-    if slack_enabled != "true":
-        return
-    client = _get_client()
+    client = _make_client(bot_token)
     client.chat_postMessage(channel=channel, text=text)
