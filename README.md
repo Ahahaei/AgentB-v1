@@ -2,7 +2,8 @@
 
 An autonomous, multi-tenant operational agent for e-commerce sellers. Built on a platform adapter architecture, it is designed to work across multiple marketplaces — Amazon, Shopify, Lazada, Tiki, and others — where each platform is a pluggable adapter that translates platform-specific events and APIs into the agent's internal model. Amazon SP API is the first adapter implemented.
 
-The agent monitors seller activity in real time, classifies operational signals, and runs them through a per-seller policy engine to determine risk. Low-risk decisions are executed automatically against the platform's API. High-risk decisions are escalated to the seller via Slack with one-click Approve/Reject. Every event, decision, and outcome is persisted for full auditability. Multiple sellers are fully isolated: separate policies, separate platform credentials, separate Slack channels, one deployment.
+The agent monitors seller activity in real time, classifies operational signals, and runs them through a per-seller policy engine to determine risk. Agent also have list of tools to fulfill seller request on activities relate to platform per DMs. While listening on webhooks or performing actions, low-risk decisions are executed automatically against the platform's API. High-risk decisions are escalated to the seller via Slack with one-click Approve/Reject. Every event, decision, and outcome is persisted for full auditability. Multiple sellers are fully isolated: separate policies, separate platform credentials, separate Slack channels, in their own workspace, one deployment.
+
 
 ---
 
@@ -10,12 +11,13 @@ The agent monitors seller activity in real time, classifies operational signals,
 
 Amazon sellers generate a constant stream of operational signals — low inventory, unusual order spikes, abnormal refund rates. Today these are handled manually: sellers log into Seller Central, check dashboards, place restock orders, and investigate anomalies themselves. This is slow, reactive, and does not scale.
 
-This agent sits between the platform and the seller, acting as an autonomous ops engineer:
+This RTR out of the box agent with absolute minimal set up sits between the platform and the seller, acting as an autonomous ops engineer:
 
 - **Reacts** to operational events in real time
 - **Decides** autonomously based on seller-defined policy thresholds
 - **Executes** low-risk actions without human input
 - **Escalates** high-risk decisions to the seller via Slack, waits for approval, then executes
+- **Listen** to command from sellers
 - **Anticipates** problems and opportunities before they surface — powered by AI-driven insight signals
 
 The end state: a seller connects their Slack and platform credentials once. From that point, the agent manages their day-to-day operations — only pinging them when something genuinely requires a human decision, and proactively surfacing what they would never have caught themselves.
@@ -28,9 +30,8 @@ The end state: a seller connects their Slack and platform credentials once. From
 Platform Webhooks (Amazon SP API, Shopify, Lazada, ...)
         |
         v
-POST /webhooks/{platform}      <- Layer 1: domain facts (orders, shipments)
+POST /webhooks/{platform}      <- Layer 1: domain facts (orders, shipments, cancellations)
 POST /events                   <- Layer 2: monitoring signals (low inventory, spikes, refunds)
-[Scheduled AI jobs]            <- Layer 3: business insight & proactive signals
         |
         v
   BackgroundTask
@@ -43,7 +44,7 @@ POST /events                   <- Layer 2: monitoring signals (low inventory, sp
 |  3. executor    -> ExecutionStatus       |
 |                                          |
 |  LOW risk  -> Platform API (auto-exec)   |
-|  HIGH risk -> AI agent analyst   + Slack |
+|  HIGH risk -> Escalation + Slack         |
 +------------------------------------------+
         |                    |
         v                    v
@@ -57,19 +58,40 @@ POST /events                   <- Layer 2: monitoring signals (low inventory, sp
                              v
                     Approval resolved in DB
                     Platform API call executed
+
+After any L2 event completes (BackgroundTask, non-blocking):
++------------------------------------------+
+|    Cross-event Correlation Agent         |
+|  Looks across recent L2 events for       |
+|  multi-signal patterns (e.g. refund      |
+|  spike + inventory low = possible defect)|
+|  → posts standalone Slack insight alert  |
++------------------------------------------+
+
+Conversational path (seller DMs the bot):
+POST /slack/events
+        |
+        v
+  LLM Agent (Anthropic tool-calling loop)
+  tools: reorder_sku / list_approvals / get_refund_rate
+        |
+        v
+  Policy engine (unchanged — guards every tool)
+        |
+        v
+  Response posted to seller's Slack DM
 ```
 
 ---
 
-## Three-Layer Event Model
+## Two-Layer Event Model + Cross-event Correlation Agent
 
-Events are split into three layers with different origins and semantics:
+Events are split into two layers with different origins and semantics:
 
 | Layer | Source | Event Types | Pipeline behavior |
 |---|---|---|---|
 | **Domain (L1)** | Platform webhooks | `order_created`, `order_paid`, `order_shipped`, `order_canceled` | Record only — no decision |
 | **Monitoring (L2)** | Platform webhooks | `inventory_low`, `order_spike_detected`, `high_refund_rate_detected` | Full decision pipeline |
-| **Insight (L3)** | Internal AI jobs | Predictive & strategic signals | Full decision pipeline |
 
 ### Layer 1 — Domain Events
 Raw facts from the platform. Stored for audit and history. No decision is made — these are the ground truth record of what happened.
@@ -77,21 +99,19 @@ Raw facts from the platform. Stored for audit and history. No decision is made �
 ### Layer 2 — Monitoring Events
 Derived operational signals that require a response right now. Triggered by a single platform event crossing a threshold. Runs the full decision pipeline immediately.
 
-### Layer 3 — Business Insight & Proactive Signals
-AI-generated signals that emerge from patterns over time, not from a single event. These are the most creative and highest-value signals — things the seller would never catch manually. (DELAYED)
+### Cross-event Correlation Agent (L2 → Insight)
+AI agent that runs as a `BackgroundTask`, looks across recent events, interaction history for multi-signal patterns that individual events and the deterministic policy engine cannot detect, because the pipeline processes each event in isolation with no cross-event memory.
 
-**Risk signals:**
-- Refund rate climbing 2% per week for 3 consecutive weeks — flag before it hits the threshold
-- Top SKU has had zero reorders in 60 days but order volume is trending up — stockout incoming
-- Competitor pricing dropped significantly in the same category — seller conversion will be affected
+The 3 L2 types and example of what their combinations mean (not limit to this one ofc):
 
-**Opportunity signals:**
-- Same week last year this seller's orders spiked 4x — pre-position inventory now before peak
-- SKU has 94% positive reviews and low inventory — strong candidate for ad spend increase
-- Two SKUs have high individual refund rates but strong co-purchase signals — bundle opportunity
+| Combination | Interpretation |
+|---|---|
+| `INVENTORY_LOW` + `HIGH_REFUND_RATE` (same SKU) | Product may be defective — reordering more stock compounds the problem |
 
-**How Layer 3 fits the architecture:**
-A scheduled AI job reads from the `events` table and broader seller data, runs analysis (LLM + statistical models), and emits a Layer 3 signal back into the same pipeline. The classify → policy → execute → escalate flow handles it identically to Layer 2. The only difference is the signal origin — internal intelligence, not an external webhook. The LLM is not making the final decision; it is generating the insight that the policy engine then evaluates.
+
+When a meaningful pattern is detected, the agent posts a standalone Slack alert — distinct from escalation approval messages and conversational replies. Agent will override to shutdown execution if extreme condition happens. If no pattern is found, nothing is posted.
+
+The agent only calls the LLM when 2+ different L2 types have fired for the same seller in a recent time window. A pre-check gate skips the LLM entirely when there is only one signal type — which is the case for the majority of events.
 
 ---
 
@@ -181,12 +201,27 @@ Adding a new platform requires: a new webhook router, a new API client under `ap
 | `POST` | `/approvals/{id}/approve` | Approve via REST |
 | `POST` | `/approvals/{id}/reject` | Reject via REST |
 
+### Sellers
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/sellers` | Onboard a new seller |
+| `GET` | `/sellers` | List all sellers |
+| `GET` | `/sellers/{id}` | Get seller details |
+| `PATCH` | `/sellers/{id}` | Update policies, Slack config, or status |
+
 ### Slack
 | Method | Path | Description |
 |---|---|---|
-| `POST` | `/slack/interactions` | Handle Approve/Reject button clicks |
-| `GET` | `/slack/install` | Begin Slack OAuth install flow (planned) |
-| `GET` | `/slack/oauth/callback` | Receive OAuth token from Slack (planned) |
+| `POST` | `/slack/interactions` | Handle Approve/Reject button clicks from Block Kit messages |
+| `POST` | `/slack/events` | Receive conversational messages — routes to LLM agent |
+| `GET` | `/slack/authorize` | Begin Slack OAuth install flow (multi-workspace) |
+| `GET` | `/slack/callback` | Receive bot token from Slack after OAuth consent |
+
+### Amazon OAuth
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/oauth/authorize` | Redirect seller to Amazon LWA consent screen |
+| `GET` | `/oauth/callback` | Exchange authorization code for refresh token → store in `sp_api_credentials` |
 
 ### System
 | Method | Path | Description |
