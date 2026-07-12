@@ -1,4 +1,4 @@
-# Seller Operations Agent (REAL opperation driven commercial product, with users. Not a portfolios)
+# Seller Operations Agent (REAL opperation driven commercial product, with users. Not a portfolios trust me bro)
 
 An autonomous, multi-tenant operational agent for e-commerce sellers. Built on a platform adapter architecture, it is designed to work across multiple marketplaces — Amazon, Shopify, Lazada, Tiki, and others — where each platform is a pluggable adapter that translates platform-specific events and APIs into the agent's internal model. Amazon SP API is the first adapter implemented.
 
