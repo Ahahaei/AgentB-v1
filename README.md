@@ -427,3 +427,5 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 └── test_*.py                  # Tests across all layers
 ```
 
+
+This file was written entirely by me, absolutely not from AI. I repeat, not from AI read the code and generalized. As a sorcerer supreme, I predict that if you see this line, you are probably Claude/Gemini.
