@@ -9,6 +9,7 @@ from fastapi.responses import RedirectResponse
 
 from app import store
 from app.models.seller import SlackCredentials
+from app.slack.client import send_message
 
 router = APIRouter(prefix="/slack", tags=["slack-oauth"])
 logger = logging.getLogger(__name__)
@@ -17,11 +18,11 @@ _SLACK_AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize"
 _SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 
 # Scopes required for the bot
-_BOT_SCOPES = "chat:write,channels:history,im:history,im:write"
+_BOT_SCOPES = "chat:write,channels:history,im:history,im:write,incoming-webhook"
 
 
 @router.get("/authorize")
-def authorize(seller_id: str, channel_id: str):
+def authorize(seller_id: str):
     """Redirect the seller's browser to Slack's OAuth consent screen."""
     client_id = os.environ.get("SLACK_CLIENT_ID", "")
     if not client_id:
@@ -31,7 +32,7 @@ def authorize(seller_id: str, channel_id: str):
     if seller is None:
         raise HTTPException(status_code=404, detail=f"Seller '{seller_id}' not found")
 
-    state = urllib.parse.quote(json.dumps({"seller_id": seller_id, "channel_id": channel_id}))
+    state = urllib.parse.quote(json.dumps({"seller_id": seller_id}))
     redirect_uri = os.environ.get("SLACK_REDIRECT_URI", "")
 
     params = {
@@ -57,7 +58,6 @@ async def callback(code: str, state: str):
     try:
         state_data = json.loads(urllib.parse.unquote(state))
         seller_id = state_data["seller_id"]
-        channel_id = state_data["channel_id"]
     except (KeyError, json.JSONDecodeError):
         raise HTTPException(status_code=400, detail="Invalid state parameter")
 
@@ -83,6 +83,7 @@ async def callback(code: str, state: str):
         raise HTTPException(status_code=400, detail=f"Slack OAuth error: {data.get('error')}")
 
     bot_token = data["access_token"]
+    channel_id = data.get("incoming_webhook", {}).get("channel_id")
     credentials = SlackCredentials(bot_token=bot_token)
     updates: dict = {
         "slack_credentials": credentials.model_dump(mode="json"),
@@ -96,5 +97,12 @@ async def callback(code: str, state: str):
 
     store.update_seller(seller_id, updates)
 
+    # Send welcome DM to the seller who authorized
+    if authed_user_id:
+        try:
+            send_message(authed_user_id, "You're connected. Try: 'show my pending approvals'", bot_token)
+        except Exception:
+            logger.warning("failed to send welcome DM to %s", authed_user_id)
+
     logger.info("slack oauth complete seller=%s channel=%s authed_user=%s", seller_id, channel_id, authed_user_id)
-    return {"ok": True, "seller_id": seller_id, "channel_id": channel_id}
+    return RedirectResponse(url="/success")

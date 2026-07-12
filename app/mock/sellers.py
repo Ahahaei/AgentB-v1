@@ -23,7 +23,7 @@ MOCK_SELLERS: list[Seller] = [
         name="Gadget Galaxy",
         status=SellerStatus.ACTIVE,
         slack_channel_id="C0AJBKT8U1L",
-        slack_user_id="U0AJA98PWVB",
+        slack_user_id="U_MOCK_S001",
         sp_api_credentials=_PLACEHOLDER_CREDENTIALS,
         slack_credentials=SlackCredentials(bot_token="xoxb-mock-s001-token"),
         policies=SellerPolicies(

@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 from app.routers.approvals import router as approvals_router
 from app.routers.events import router as events_router
 from app.routers.oauth import router as oauth_router
+from app.routers.onboard import router as onboard_router
 from app.routers.sellers import router as sellers_router
 from app.routers.slack import router as slack_router
 from app.routers.slack_oauth import router as slack_oauth_router
@@ -28,12 +29,14 @@ from app.routers.webhooks import router as webhooks_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from alembic.config import Config
-    from alembic import command
     from app.db.seed import seed_sellers
     os.environ["RUNNING_IN_APP"] = "1"
-    alembic_cfg = Config("alembic.ini")
-    command.upgrade(alembic_cfg, "head")
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url.startswith("sqlite"):
+        from alembic.config import Config
+        from alembic import command
+        alembic_cfg = Config("alembic.ini")
+        command.upgrade(alembic_cfg, "head")
     seed_sellers()
     yield
 
@@ -44,6 +47,7 @@ app.include_router(webhooks_router)
 app.include_router(approvals_router)
 app.include_router(sellers_router)
 app.include_router(oauth_router)
+app.include_router(onboard_router)
 app.include_router(slack_router)
 app.include_router(slack_oauth_router)
 
