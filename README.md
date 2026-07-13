@@ -294,10 +294,10 @@ LLM is a **reasoning, tool selecting, and extraction layer**, not a final decisi
 | Role | Where | Status |
 |---|---|---|
 | Layer 3 signal generation | Scheduled AI jobs → insight events | halt indefinitely |
-| Intent classification, tool selection | Conversational Slack messages | In Progress |
-| Structured extraction | Parse free-text commands | Planned |
-| Escalation enrichment | Plain-English context in Slack approval messages | Planned |
-| Decision assistance | Historical context alongside escalations | Planned |
+| Intent classification, tool selection | Conversational Slack messages | Done |
+| Structured extraction | Parse free-text commands | Done |
+| Escalation enrichment | Plain-English context in Slack approval messages | In Progress (easy) |
+| Decision assistance | Historical context alongside escalations | In Progress |
 
 **What LLM will NOT do:**
 - Make final execution decisions
