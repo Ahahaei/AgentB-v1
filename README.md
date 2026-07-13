@@ -1,4 +1,4 @@
-# Seller Operations Agent (REAL opperation driven commercial product, with users. Not a portfolios trust me bro)
+# Seller Operations Agent 
 
 An autonomous, multi-tenant operational agent for e-commerce sellers. Built on a platform adapter architecture, it is designed to work across multiple marketplaces — Amazon, Shopify, Lazada, Tiki, and others — where each platform is a pluggable adapter that translates platform-specific events and APIs into the agent's internal model. Amazon SP API is the first adapter implemented.
 
@@ -100,9 +100,9 @@ Raw facts from the platform. Stored for audit and history. No decision is made �
 Derived operational signals that require a response right now. Triggered by a single platform event crossing a threshold. Runs the full decision pipeline immediately.
 
 ### Cross-event Correlation Agent (L2 → Insight)
-AI agent that runs as a `BackgroundTask`, looks across recent events, interaction history for multi-signal patterns that individual events and the deterministic policy engine cannot detect, because the pipeline processes each event in isolation with no cross-event memory.
+AI agent that looks across recent events, interaction history for multi-signal patterns that individual events and the deterministic policy engine cannot detect, because the pipeline processes each event in isolation with no cross-event memory.
 
-The 3 L2 types and example of what their combinations mean (not limit to this one ofc):
+The L2 types and example of what their combinations mean (not limit to this one ofc):
 
 | Combination | Interpretation |
 |---|---|
@@ -174,7 +174,7 @@ The core pipeline is platform-agnostic. Each e-commerce platform is a pluggable 
 - Handling platform-specific authentication (LWA for Amazon, OAuth for Shopify, etc.)
 
 **Current adapters:**
-- Amazon SP API (implemented — mock mode, production structure ready)
+- Amazon SP API (implemented — e2e production structure ready, more webhooks to be wired)
 
 **Planned adapters:**
 - Shopify
@@ -283,13 +283,13 @@ endpoint            - regional SP API base URL
 | `flag_order_spike` | Acknowledged |
 | `flag_refund_rate` | Acknowledged |
 
-**Mock mode** (`SP_API_ENABLED=false`): returns `MOCK-PO-XXXXXXXX` order IDs without calling Amazon.
+**Mock mode** (`SP_API_ENABLED=false`): returns `MOCK-PO-XXXXXXXX` order IDs without calling Amazon. (DEPRECATED, alembic bypassed in main)
 
 ---
 
 ## LLM Integration
 
-LLM is a **reasoning, tool selecting, and extraction layer**, not a final decision layer. The policy engine remains deterministic and auditable.
+LLM is a **reasoning, tool selecting, extraction layer + monitoring and alerts in extreme situation**, not a final decision layer. The policy engine remains deterministic and auditable.
 
 | Role | Where | Status |
 |---|---|---|
@@ -308,7 +308,7 @@ LLM is a **reasoning, tool selecting, and extraction layer**, not a final decisi
 
 ## Database
 
-**PostgreSQL** (production/dev), **SQLite in-memory** (tests).
+**PostgreSQL** (production/dev), **SQLite in-memory** (unit tests).
 
 ### Schema
 
@@ -347,9 +347,7 @@ slack_channel_id, slack_ts
 
 SQS decouples ingestion from processing. Lambda scales independently from the API tier. Secrets Manager holds all credentials — nothing sensitive in environment variables or code.
 
-
-
-Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are pinned in `conftest.py` — no real external calls during testing.
+I believe this is good atm, can be more optimized for cost-effectiveness at a later stage. 
 
 ---
 
@@ -362,7 +360,7 @@ Tests use SQLite in-memory. `SLACK_ENABLED=false` and `SP_API_ENABLED=false` are
 | `SLACK_CLIENT_ID` | Slack app client ID — used in multi-workspace OAuth flow |
 | `SLACK_CLIENT_SECRET` | Slack app client secret — used in multi-workspace OAuth flow |
 | `SLACK_REDIRECT_URI` | Slack OAuth redirect URI |
-| `SP_API_ENABLED` | Enable real Amazon SP API calls (default: `false` → mock responses) |
+| `SP_API_ENABLED` | Enable real Amazon SP API calls (default: `false` → mock responses, DEPRECATED) | 
 | `LWA_CLIENT_ID` | Amazon LWA app client ID — used in SP API OAuth flow |
 | `LWA_CLIENT_SECRET` | Amazon LWA app client secret — used in SP API OAuth flow |
 | `OAUTH_REDIRECT_URI` | Amazon SP API OAuth redirect URI |
