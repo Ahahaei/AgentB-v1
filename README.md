@@ -2,7 +2,7 @@
 
 An autonomous, multi-tenant operational agent for e-commerce sellers. Built on a platform adapter architecture, it is designed to work across multiple marketplaces — Amazon, Shopify, Lazada, Tiki, and others — where each platform is a pluggable adapter that translates platform-specific events and APIs into the agent's internal model. Amazon SP API is the first adapter implemented.
 
-The agent monitors seller activity in real time, classifies operational signals, and runs them through a per-seller policy engine to determine risk. Agent also have list of tools to fulfill seller request on activities relate to platform per DMs. While listening on webhooks or performing actions, low-risk decisions are executed automatically against the platform's API. High-risk decisions are escalated to the seller via Slack with one-click Approve/Reject. Every event, decision, and outcome is persisted for full auditability. Multiple sellers are fully isolated: separate policies, separate platform credentials, separate Slack channels, in their own workspace, one deployment.
+The agent monitors seller activity in real time, classifies operational signals, and runs them through a per-seller policy engine to determine risk. Agent also have list of tools to fulfill seller request on activities relate to platform per DMs. While listening on webhooks or performing actions, low-risk decisions are executed automatically against the platform's API. High-risk decisions are escalated to the seller via Slack with one-click Approve/Reject. Agent also looks across events and operational history for patterns spanning multiple signals, then decides whether to allow future actions or surface an insight alert or intervenes executions when the situation is extreme. The agent remains unauthorized to independently start any actions by itself. Every event, decision, and outcome is persisted for full auditability. Multiple sellers are fully isolated: separate policies, separate platform credentials, separate Slack channels, in their own workspace, one deployment.
 
 
 ---
@@ -99,8 +99,8 @@ Raw facts from the platform. Stored for audit and history. No decision is made �
 ### Layer 2 — Monitoring Events
 Derived operational signals that require a response right now. Triggered by a single platform event crossing a threshold. Runs the full decision pipeline immediately.
 
-### Cross-event Correlation Agent (L2 → Insight)
-AI agent that looks across recent events, interaction history for multi-signal patterns that individual events and the deterministic policy engine cannot detect, because the pipeline processes each event in isolation with no cross-event memory.
+### Cross-event Correlation Agent (L2 → Insight) - LangGraph
+AI agent that looks across recent events, execution history, and approval history for multi-signal patterns since the pipeline processes each event in isolation with no cross-event memory. As more SP API webhooks are wired up, the range of L2 signal types — and the meaningful combinations between them — will keep growing.
 
 The L2 types and example of what their combinations mean (not limit to this one ofc):
 
@@ -109,9 +109,9 @@ The L2 types and example of what their combinations mean (not limit to this one 
 | `INVENTORY_LOW` + `HIGH_REFUND_RATE` (same SKU) | Product may be defective — reordering more stock compounds the problem |
 
 
-When a meaningful pattern is detected, the agent posts a standalone Slack alert — distinct from escalation approval messages and conversational replies. Agent will override to shutdown execution if extreme condition happens. If no pattern is found, nothing is posted.
+When a meaningful pattern is detected, the agent reasons over the background to decide the appropriate response: it posts a standalone Slack alert — distinct from escalation approval messages and conversational replies — or, for extreme conditions, intervenes directly by halting execution. If no pattern is found, nothing is posted.
 
-The agent only calls the LLM when 2+ different L2 types have fired for the same seller in a recent time window. A pre-check gate skips the LLM entirely when there is only one signal type — which is the case for the majority of events.
+The agent only calls the LLM when 2+ different L2 types have fired for the same seller in a recent time window. A pre-check gate skips the LLM entirely when there is only one signal type — which is the case for the majority of events. This agent still, will not be granted the authority to start any actions by its own.
 
 ---
 
@@ -297,7 +297,7 @@ LLM is a **reasoning, tool selecting, extraction layer + monitoring and alerts i
 | Intent classification, tool selection | Conversational Slack messages | Done |
 | Structured extraction | Parse free-text commands | Done |
 | Escalation enrichment | Plain-English context in Slack approval messages | In Progress (easy) |
-| Decision assistance | Historical context alongside escalations | In Progress |
+| Decision assistance | Cross-event Correlation Agent — reasons across event, execution, and approval history to recommend an alert or an intervention | In Progress |
 
 **What LLM will NOT do:**
 - Make final execution decisions
