@@ -7,7 +7,6 @@ venv/
 .git/
 .pytest_cache/
 *.egg-info/
-test_*.py
-conftest.py
+tests/
 *.db
 README.md
