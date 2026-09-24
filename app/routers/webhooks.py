@@ -1,9 +1,8 @@
 import logging
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from app import store
-from app.engine.pipeline import run_job
 from app.models.event import DOMAIN_EVENT_TYPES, EventInput, EventStatus
 from app.platforms import registry
 from app.platforms.base import NormalizationError, RawDelivery, UnknownPlatform
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Declared before /{platform} so the literal path always wins the match.
 @router.post("/sp-api", status_code=202, dependencies=[Depends(require_internal_token)])
-def receive_sp_api_event(event: EventInput, background_tasks: BackgroundTasks):
+def receive_sp_api_event(event: EventInput):
     """Internal endpoint: inject a domain event with a trusted seller_id.
 
     Retained for tests and manual injection. Real platform deliveries go to
@@ -27,16 +26,11 @@ def receive_sp_api_event(event: EventInput, background_tasks: BackgroundTasks):
             detail=f"'{event.event_type}' is not a domain event. Use POST /events for monitoring events.",
         )
     enqueued = store.ingest_internal_event(event.seller_id, event.event_type, event.payload)
-    background_tasks.add_task(run_job, enqueued.job_id, enqueued.event_id)
     return {"event_id": enqueued.event_id, "status": EventStatus.PENDING}
 
 
 @router.post("/{platform}", status_code=202)
-async def receive_platform_delivery(
-    platform: str,
-    request: Request,
-    background_tasks: BackgroundTasks,
-):
+async def receive_platform_delivery(platform: str, request: Request):
     """Verify → normalize → resolve → store, then acknowledge.
 
     Everything left of the store is terminal on failure: a bad signature never
@@ -81,8 +75,7 @@ async def receive_platform_delivery(
         )
         return Response(status_code=202)
 
-    for enqueued in store.ingest_delivery(account.seller_id, platform, events):
-        background_tasks.add_task(run_job, enqueued.job_id, enqueued.event_id)
+    store.ingest_delivery(account.seller_id, platform, events)
 
     # Empty body: Shopee requires it, nothing else objects.
     return Response(status_code=202)

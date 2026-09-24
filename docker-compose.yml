@@ -42,5 +42,20 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Processes jobs. The API no longer runs any background work of its own.
+  worker:
+    build: .
+    command: ["python", "worker.py"]
+    env_file: .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   postgres_data:

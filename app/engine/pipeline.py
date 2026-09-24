@@ -9,26 +9,44 @@ from app.engine import classifier, executor
 from app.engine import policy as policy_engine
 from app.models.approval import ApprovalStatus, PendingApproval
 from app.models.decision import DecisionResult, ExecutionStatus
-from app.models.event import EVENT_LAYER_MAP, EventLayer, EventStatus
-from app.models.job import JobStatus
+from app.models.event import EVENT_LAYER_MAP, EventLayer
 from app.models.seller import SellerStatus
 
 
-def run_job(job_id: str, event_id: str) -> None:
-    """Run one job to completion and close it.
+def _outcome_message(record, result: DecisionResult) -> str:
+    """What the seller reads in Slack once their DM request has been decided."""
+    policy = result.policy_result
+    sku = record.payload.get("sku", "the item")
+    quantity = policy.recommended_quantity
+    spend = f" (est. ${policy.estimated_spend:,.2f})" if policy.estimated_spend else ""
 
-    ⚠ TEMPORARY BRIDGE. Ingest now commits an event and a job together, but no
-    worker process claims jobs yet, so the routers still hand this to
-    `BackgroundTasks` — in-process, no retry, dies with the worker. Stage 4
-    replaces the caller with a claim loop; this function's body is what that
-    loop will run.
+    if result.execution_result.status == ExecutionStatus.ESCALATED:
+        return (
+            f"⏳ {quantity} units of {sku}{spend} exceeds your auto-approve limits — "
+            f"sent to your channel for approval."
+        )
+    return f"✅ {quantity} units of {sku}{spend} — done."
+
+
+def _reply_to_chat(record, seller, result: DecisionResult) -> None:
+    """Post the outcome back to the DM that asked for it.
+
+    A chat request is acknowledged immediately and decided later in the worker,
+    so the answer has to find its own way back. `reply_channel` is set only by
+    the chat entry point; platform-originated events have none and stay silent.
     """
-    run_pipeline(event_id)
-    event = store.get_event(event_id)
-    if event is not None and event.status == EventStatus.FAILED:
-        store.finish_job(job_id, JobStatus.DEAD, error=event.error)
-    else:
-        store.finish_job(job_id, JobStatus.DONE)
+    channel = record.payload.get("reply_channel")
+    if not channel or seller.slack_credentials is None:
+        return
+    from app.slack import client as slack_client
+    try:
+        slack_client.send_message(
+            channel, _outcome_message(record, result), seller.slack_credentials.bot_token
+        )
+    except Exception:
+        # The decision is already committed; a failed courtesy message must not
+        # fail the job and trigger a retry of the work itself.
+        logger.exception("event=%s failed to post outcome to channel=%s", record.id, channel)
 
 
 def execute_approved(approval_id: str, resolved_by: str) -> None:
@@ -110,6 +128,7 @@ def run_pipeline(event_id: str) -> None:
             execution_result=execution_result,
         )
         store.set_event_completed(event_id, result)
+        _reply_to_chat(record, seller, result)
 
     except Exception as exc:
         logger.exception("event=%s pipeline failed: %s", event_id, exc)

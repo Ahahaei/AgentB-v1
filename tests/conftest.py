@@ -31,6 +31,34 @@ def mock_slack_client():
 
 
 @pytest.fixture(autouse=True)
+def eager_worker(monkeypatch):
+    """Run the worker inline, immediately after anything is enqueued.
+
+    In production the API only writes an event and a job; a separate process
+    claims and runs them. Tests want the outcome to exist by the time the
+    request returns, so rather than sprinkling `worker.drain()` through every
+    assertion, the two ingest primitives drain the queue before returning.
+
+    This makes each test synchronous, at the cost of not exercising the
+    durability boundary — the queue itself is covered directly in
+    tests/test_worker.py.
+    """
+    import worker
+    from app import store
+
+    def eager(real):
+        def wrapper(*args, **kwargs):
+            result = real(*args, **kwargs)
+            worker.drain()
+            return result
+        return wrapper
+
+    monkeypatch.setattr(store, "ingest_delivery", eager(store.ingest_delivery))
+    monkeypatch.setattr(store, "ingest_internal_event", eager(store.ingest_internal_event))
+    yield
+
+
+@pytest.fixture(autouse=True)
 def bypass_internal_auth():
     """Let the existing suite post to the internal endpoints without a header.
 

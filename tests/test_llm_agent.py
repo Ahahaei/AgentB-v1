@@ -65,34 +65,28 @@ def test_agent_dispatches_reorder_sku(mock_get_client):
     mock_client.messages.create.side_effect = [tool_response, followup]
     mock_get_client.return_value = mock_client
 
-    with patch("app.llm.tool_handlers.run_job"):
-        with patch("app.llm.tool_handlers.store.ingest_internal_event"):
-            with patch("app.llm.tool_handlers.store.get_event") as mock_get_event:
-                from app.models.decision import DecisionResult, ExecutionResult, ExecutionStatus, PolicyResult, RiskLevel
-                from app.models.intent import Intent
-                mock_result = MagicMock()
-                mock_result.status.value = "completed"
-                mock_result.status = MagicMock()
-                mock_result.status.__eq__ = lambda self, other: other.value == "completed"
-
-                from app.models.event import EventStatus
-                evt = MagicMock()
-                evt.status = EventStatus.COMPLETED
-                pr = MagicMock()
-                pr.estimated_spend = 80.0
-                er = MagicMock()
-                er.status = ExecutionStatus.EXECUTED
-                er.sp_api_result = {"order_id": "MOCK-PO-ABC", "status": "success"}
-                result = MagicMock()
-                result.policy_result = pr
-                result.execution_result = er
-                evt.result = result
-                mock_get_event.return_value = evt
-
-                reply = agent_module.run_agent("reorder 10 units of WIDGET-42", S001)
+    # The handler only enqueues now, so there is no decision to fake.
+    with patch("app.llm.tool_handlers.store.ingest_internal_event"):
+        reply = agent_module.run_agent("reorder 10 units of WIDGET-42", S001)
 
     assert "done" in reply.lower() or "reorder" in reply.lower()
     assert mock_client.messages.create.call_count == 2
+
+
+@patch("app.llm.agent._get_client")
+def test_agent_passes_the_reply_channel_to_the_tool(mock_get_client):
+    mock_client = MagicMock()
+    mock_client.messages.create.side_effect = [
+        _make_tool_use_response("reorder_sku", {"sku": "WIDGET-42", "quantity": 10}),
+        _make_text_response("Queued."),
+    ]
+    mock_get_client.return_value = mock_client
+
+    with patch("app.llm.tool_handlers.reorder_sku") as mock_reorder:
+        mock_reorder.return_value = "Queued."
+        agent_module.run_agent("reorder 10 WIDGET-42", S001, reply_channel="C_DM_001")
+
+    assert mock_reorder.call_args.kwargs["reply_channel"] == "C_DM_001"
 
 
 @patch("app.llm.agent._get_client")
@@ -145,18 +139,44 @@ def test_agent_returns_text_when_no_tool_needed(mock_get_client):
 # tool_handlers — reorder_sku (uses real DB)
 # ---------------------------------------------------------------------------
 
-def test_reorder_sku_low_risk_returns_executed_message():
+def test_reorder_sku_acknowledges_rather_than_deciding():
+    # The decision now happens in the worker, so the DM reply cannot contain it.
     with TestClient(app):
         result = tool_handlers.reorder_sku(sku="WIDGET-42", quantity=10, seller=S001)
+    assert "queued" in result.lower()
+    assert "WIDGET-42" in result and "10" in result
+    assert "MOCK-PO-" not in result
+
+
+def test_reorder_sku_low_risk_outcome_is_posted_back_to_the_channel():
     # S001: 10 units * $8 = $80 — below auto-approve limits
-    assert "MOCK-PO-" in result or "submitted" in result.lower()
+    with patch("app.slack.client.send_message") as send_message:
+        with TestClient(app):
+            tool_handlers.reorder_sku(
+                sku="WIDGET-42", quantity=10, seller=S001, reply_channel="C_DM_001"
+            )
+    channel, text, _token = send_message.call_args[0]
+    assert channel == "C_DM_001"
+    assert "✅" in text and "WIDGET-42" in text
 
 
-def test_reorder_sku_high_risk_returns_escalated_message():
-    with TestClient(app):
-        result = tool_handlers.reorder_sku(sku="WIDGET-42", quantity=200, seller=S001)
+def test_reorder_sku_high_risk_outcome_says_it_went_for_approval():
     # S001: 200 units * $8 = $1600 — above auto_approve_max_spend ($500)
-    assert "approval" in result.lower() or "escalat" in result.lower()
+    with patch("app.slack.client.send_message") as send_message:
+        with TestClient(app):
+            tool_handlers.reorder_sku(
+                sku="WIDGET-42", quantity=200, seller=S001, reply_channel="C_DM_001"
+            )
+    _channel, text, _token = send_message.call_args[0]
+    assert "approval" in text.lower()
+
+
+def test_reorder_sku_without_a_channel_posts_nothing():
+    # Platform-originated work has no conversation to answer.
+    with patch("app.slack.client.send_message") as send_message:
+        with TestClient(app):
+            tool_handlers.reorder_sku(sku="WIDGET-42", quantity=10, seller=S001)
+    assert not send_message.called
 
 
 # ---------------------------------------------------------------------------

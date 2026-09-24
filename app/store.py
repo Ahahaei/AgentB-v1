@@ -1,11 +1,9 @@
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Sequence
 
-from typing import Sequence
-
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
@@ -369,6 +367,104 @@ def get_jobs_for_event(event_id: str) -> list[Job]:
             select(JobRow).where(JobRow.event_id == event_id)
         ).scalars().all()
         return [_job_from_row(row) for row in rows]
+
+
+def _claimable(now: datetime, stale_before: datetime):
+    """Due work, plus jobs a dead worker left behind.
+
+    The reaper is this second arm rather than a separate process: a row stuck in
+    `processing` past the staleness window is indistinguishable from one whose
+    worker died holding it, and both want the same treatment.
+    """
+    return or_(
+        and_(JobRow.status == JobStatus.PENDING.value, JobRow.run_after <= now),
+        and_(JobRow.status == JobStatus.PROCESSING.value, JobRow.locked_at < stale_before),
+    )
+
+
+def _claim_postgres(db, now: datetime, stale_before: datetime) -> Optional[str]:
+    """Single statement: SKIP LOCKED makes concurrent workers pick different rows."""
+    candidate = (
+        select(JobRow.id)
+        .where(_claimable(now, stale_before))
+        .order_by(JobRow.created_at)
+        .limit(1)
+        .with_for_update(skip_locked=True)
+        .correlate(None)  # subquery selects from `jobs`; don't let the UPDATE correlate it away
+        .scalar_subquery()
+    )
+    return db.execute(
+        update(JobRow)
+        .where(JobRow.id == candidate)
+        .values(
+            status=JobStatus.PROCESSING.value,
+            attempts=JobRow.attempts + 1,
+            locked_at=now,
+            updated_at=now,
+        )
+        .returning(JobRow.id)
+    ).scalar_one_or_none()
+
+
+def _claim_generic(db, now: datetime, stale_before: datetime) -> Optional[str]:
+    """SELECT then compare-and-swap, for backends without SKIP LOCKED (sqlite).
+
+    The UPDATE re-asserts the state the SELECT observed, so a row another worker
+    took in between updates zero rows and this claim simply loses.
+    """
+    candidate = db.execute(
+        select(JobRow.id, JobRow.status, JobRow.locked_at)
+        .where(_claimable(now, stale_before))
+        .order_by(JobRow.created_at)
+        .limit(1)
+    ).first()
+    if candidate is None:
+        return None
+
+    job_id, observed_status, observed_locked_at = candidate
+    lock_guard = (
+        JobRow.locked_at.is_(None) if observed_locked_at is None
+        else JobRow.locked_at == observed_locked_at
+    )
+    result = db.execute(
+        update(JobRow)
+        .where(JobRow.id == job_id)
+        .where(JobRow.status == observed_status)
+        .where(lock_guard)
+        .values(
+            status=JobStatus.PROCESSING.value,
+            attempts=JobRow.attempts + 1,
+            locked_at=now,
+            updated_at=now,
+        )
+    )
+    return job_id if result.rowcount == 1 else None
+
+
+def claim_job(stale_after_seconds: int = 300) -> Optional[Job]:
+    """Take ownership of one job, or return None if there is nothing to do."""
+    now = datetime.now(timezone.utc)
+    stale_before = now - timedelta(seconds=stale_after_seconds)
+    with _session() as db:
+        claim = _claim_postgres if db.get_bind().dialect.name == "postgresql" else _claim_generic
+        job_id = claim(db, now, stale_before)
+        if job_id is None:
+            return None
+        db.flush()
+        return _job_from_row(db.get(JobRow, job_id))
+
+
+def reschedule_job(job_id: str, run_after: datetime, error: Optional[str] = None) -> None:
+    """Return a job to the queue for a later attempt."""
+    with _session() as db:
+        row = db.get(JobRow, job_id)
+        if row is None:
+            return
+        row.status = JobStatus.PENDING.value
+        row.run_after = run_after
+        row.locked_at = None
+        row.last_error = error
+        row.updated_at = datetime.now(timezone.utc)
 
 
 def finish_job(job_id: str, status: JobStatus, error: Optional[str] = None) -> None:

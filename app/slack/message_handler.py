@@ -16,7 +16,7 @@ def handle_message(seller: Seller, message_text: str, channel: str) -> None:
         "seller=%s channel=%s message=%r", seller.id, channel, message_text
     )
     try:
-        response = run_agent(message_text, seller)
+        response = run_agent(message_text, seller, reply_channel=channel)
     except Exception:
         logger.exception("seller=%s agent failed", seller.id)
         response = "Something went wrong. Please try again."

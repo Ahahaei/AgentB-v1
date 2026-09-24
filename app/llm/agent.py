@@ -37,12 +37,15 @@ def _system_prompt(seller: Seller) -> str:
     )
 
 
-def _dispatch(tool_name: str, tool_input: dict, seller: Seller) -> str:
+def _dispatch(
+    tool_name: str, tool_input: dict, seller: Seller, reply_channel: str | None = None
+) -> str:
     if tool_name == "reorder_sku":
         return tool_handlers.reorder_sku(
             sku=tool_input["sku"],
             quantity=tool_input["quantity"],
             seller=seller,
+            reply_channel=reply_channel,
         )
     if tool_name == "list_approvals":
         return tool_handlers.list_approvals(seller=seller)
@@ -51,9 +54,12 @@ def _dispatch(tool_name: str, tool_input: dict, seller: Seller) -> str:
     return f"Unknown tool: {tool_name}"
 
 
-def run_agent(message_text: str, seller: Seller) -> str:
+def run_agent(message_text: str, seller: Seller, reply_channel: str | None = None) -> str:
     """
     Run the tool-calling agent for a single Slack message.
+
+    `reply_channel` is carried into any queued work so the worker can post the
+    outcome back to this conversation once it has been decided.
 
     Turn 1: send message to Claude with tools defined.
     If Claude picks a tool: run it, feed result back, get final text response.
@@ -85,7 +91,7 @@ def run_agent(message_text: str, seller: Seller) -> str:
             "seller=%s tool=%s input=%s", seller.id, tool_block.name, tool_block.input
         )
 
-        tool_result = _dispatch(tool_block.name, tool_block.input, seller)
+        tool_result = _dispatch(tool_block.name, tool_block.input, seller, reply_channel)
         logger.info("seller=%s tool_result=%r", seller.id, tool_result)
 
         # Send tool result back to Claude for a natural language response

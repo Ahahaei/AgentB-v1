@@ -272,7 +272,9 @@ def test_job_is_closed_once_the_bridge_has_run():
     assert job.status == JobStatus.DONE
 
 
-def test_failed_pipeline_marks_the_job_dead():
+def test_failed_pipeline_is_retried_not_discarded():
+    # The worker retries with backoff; dead-lettering only happens once the
+    # attempts are spent. See tests/test_worker.py.
     with TestClient(app) as client:
         resp = client.post("/webhooks/sp-api", json={
             "seller_id": "S003",                # inactive seller → pipeline raises
@@ -280,5 +282,6 @@ def test_failed_pipeline_marks_the_job_dead():
             "payload": {"order_id": "ORD-1"},
         })
     job = store.get_jobs_for_event(resp.json()["event_id"])[0]
-    assert job.status == JobStatus.DEAD
+    assert job.status == JobStatus.PENDING
+    assert job.attempts == 1
     assert "not active" in job.last_error
